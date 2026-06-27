@@ -808,4 +808,8 @@ app.post('/api/tts-english', async (req, res) => {
   }
 })
 
-app.listen(3001, () => console.log('API server running on http://localhost:3001'))
+if (!process.env.VERCEL) {
+  app.listen(3001, () => console.log('API server running on http://localhost:3001'))
+}
+
+export default app
