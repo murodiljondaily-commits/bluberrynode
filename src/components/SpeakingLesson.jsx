@@ -1,0 +1,340 @@
+import { useState, useRef, useEffect } from 'react'
+import { playCorrect, playWrong } from '../lib/soundEffects'
+
+const FALLBACK_SENTENCES = {
+  english: [
+    "I eat bread every morning.",
+    "She goes to school every day.",
+    "They drink water.",
+    "He reads a book.",
+    "We sleep at ten."
+  ],
+  russian: [
+    "Я иду домой.",
+    "Она читает книгу.",
+    "Мы пьём воду.",
+    "Он спит.",
+    "Они идут в школу."
+  ],
+  math: [
+    "Two plus two equals four.",
+    "Ten minus three is seven.",
+    "Five times four is twenty."
+  ]
+}
+
+const ScoreBar = ({ label, score, color }) => (
+  <div className="flex items-center gap-2">
+    <span className="text-xs text-gray-500 w-20">{label}</span>
+    <div className="flex-1 bg-gray-200 rounded-full h-2">
+      <div
+        className={`${color} h-2 rounded-full transition-all duration-500`}
+        style={{ width: `${score}%` }}
+      />
+    </div>
+    <span className="text-xs font-bold text-gray-600 w-8">{score}</span>
+  </div>
+)
+
+export default function SpeakingLesson({ subject = 'english', sentences: propSentences, onComplete }) {
+  const [index, setIndex] = useState(0)
+  const [status, setStatus] = useState('idle') // idle | recording | processing | correct | wrong
+  const [heard, setHeard] = useState('')
+  const [xp, setXp] = useState(0)
+  const [xpEarned, setXpEarned] = useState(0)
+  const [pronunciationResult, setPronunciationResult] = useState(null)
+  const [errorMsg, setErrorMsg] = useState('')
+  const mediaRecorderRef = useRef(null)
+  const chunksRef = useRef([])
+  const processingTimeoutRef = useRef(null)
+
+  const fallback = FALLBACK_SENTENCES[subject] || FALLBACK_SENTENCES.english
+  const list = (propSentences?.length > 0 ? propSentences : fallback)
+  const current = list[index]
+  const isLast = index >= list.length - 1
+  const isDev = import.meta.env.DEV
+  const apiBase = isDev ? 'http://localhost:3001' : ''
+
+  // Safety: if processing gets stuck for >35s, reset to idle
+  useEffect(() => {
+    if (status === 'processing') {
+      processingTimeoutRef.current = setTimeout(() => {
+        setStatus('idle')
+        setErrorMsg('So\'rov vaqti tugadi. Qayta urinib ko\'ring.')
+      }, 35000)
+    } else {
+      clearTimeout(processingTimeoutRef.current)
+      if (status !== 'idle') setErrorMsg('')
+    }
+    return () => clearTimeout(processingTimeoutRef.current)
+  }, [status])
+
+  const startRecording = async () => {
+    setErrorMsg('')
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      chunksRef.current = []
+      const mediaRecorder = new MediaRecorder(stream)
+      mediaRecorderRef.current = mediaRecorder
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data)
+      }
+      mediaRecorder.start()
+      setStatus('recording')
+    } catch {
+      setErrorMsg('Mikrofonga ruxsat bering! Brauzer sozlamalarini tekshiring.')
+    }
+  }
+
+  const stopRecording = () => {
+    const mediaRecorder = mediaRecorderRef.current
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') return
+
+    mediaRecorder.onstop = async () => {
+      setStatus('processing')
+      const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
+
+      try {
+        const fd = new FormData()
+        fd.append('audio', blob, 'recording.webm')
+        fd.append('language', subject === 'russian' ? 'ru' : 'en')
+        fd.append('expected', current)
+
+        const response = await fetch(`${apiBase}/api/transcribe`, {
+          method: 'POST',
+          body: fd,
+        })
+
+        const data = await response.json()
+        const transcript = data.transcript || ''
+        const pronunciation = data.pronunciation
+
+        setHeard(transcript)
+        setPronunciationResult(pronunciation)
+
+        if (pronunciation && pronunciation.passed) {
+          const earned = Math.round((pronunciation.overall / 100) * 20)
+          setXpEarned(earned)
+          setXp(prev => prev + earned)
+          setStatus('correct')
+          playCorrect()
+        } else {
+          setXpEarned(0)
+          setStatus('wrong')
+          playWrong()
+        }
+      } catch (err) {
+        console.error('Transcription error:', err)
+        setErrorMsg("Server bilan bog'lanib bo'lmadi. Qayta urinib ko'ring.")
+        setStatus('idle')
+      }
+
+      mediaRecorder.stream.getTracks().forEach(t => t.stop())
+    }
+
+    mediaRecorder.stop()
+  }
+
+  const handleMicClick = () => {
+    if (status === 'idle') startRecording()
+    else if (status === 'recording') stopRecording()
+  }
+
+  const next = () => {
+    if (isLast) {
+      onComplete && onComplete(xp)
+    } else {
+      setIndex(i => i + 1)
+      setStatus('idle')
+      setHeard('')
+      setPronunciationResult(null)
+      setXpEarned(0)
+      setErrorMsg('')
+    }
+  }
+
+  const retry = () => {
+    setStatus('idle')
+    setHeard('')
+    setPronunciationResult(null)
+    setXpEarned(0)
+    setErrorMsg('')
+  }
+
+  const overall = pronunciationResult?.overall ?? 0
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 p-6">
+
+      {/* Sentence */}
+      <div className="text-center">
+        <p className="text-sm text-gray-400 mb-2">Gap {index + 1} / {list.length}</p>
+        <p className="text-sm text-berry-mid font-semibold mb-3">Quyidagi gapni aytib ko'ring:</p>
+        <p className="text-2xl font-black text-berry-deep bg-berry-glow rounded-2xl px-6 py-4">{current}</p>
+      </div>
+
+      {/* Error message (inline, not blocking alert) */}
+      {errorMsg && (
+        <div className="bg-orange-50 border border-orange-200 rounded-2xl px-4 py-3 text-sm text-orange-700 font-semibold max-w-sm text-center">
+          {errorMsg}
+        </div>
+      )}
+
+      {/* Mic */}
+      {(status === 'idle' || status === 'recording') && (
+        <div className="flex flex-col items-center gap-3">
+          <div className="relative flex items-center justify-center">
+            {status === 'recording' && (
+              <>
+                <div className="absolute w-36 h-36 rounded-full bg-red-400 opacity-20 animate-ping" />
+                <div className="absolute w-28 h-28 rounded-full bg-red-400 opacity-30 animate-ping" style={{ animationDelay: '0.3s' }} />
+              </>
+            )}
+            <button
+              onClick={handleMicClick}
+              className={`w-24 h-24 rounded-full text-white text-4xl shadow-xl hover:scale-110 transition-all flex items-center justify-center z-10 ${
+                status === 'recording' ? 'bg-red-500' : 'bg-berry-deep'
+              }`}
+            >
+              🎤
+            </button>
+          </div>
+          <p className="text-sm text-gray-400">
+            {status === 'idle' ? 'Mikrofon tugmasini bosing' : '🔴 Gapiryapsiz... Tugatish uchun qayta bosing'}
+          </p>
+        </div>
+      )}
+
+      {/* Processing */}
+      {status === 'processing' && (
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-24 h-24 rounded-full bg-berry-light flex items-center justify-center">
+            <div className="w-8 h-8 border-4 border-berry-deep border-t-transparent rounded-full animate-spin" />
+          </div>
+          <p className="text-sm text-gray-400">AI talaffuzni baholayapti...</p>
+        </div>
+      )}
+
+      {/* Correct scorecard */}
+      {status === 'correct' && pronunciationResult && (
+        <div className="bg-green-50 border-2 border-green-400 rounded-2xl p-6 w-full max-w-md" style={{ animation: 'fadeInUp 0.3s ease-out' }}>
+          <div className="flex items-center justify-center gap-4 mb-4">
+            <div className="w-20 h-20 rounded-full bg-berry-deep flex flex-col items-center justify-center text-white shrink-0">
+              <span className="text-2xl font-black">{pronunciationResult.overall}</span>
+              <span className="text-xs">/100</span>
+            </div>
+            <div>
+              <p className="text-xl font-black text-green-600">Zo'r! ✅</p>
+              <p className="text-sm text-gray-500">+{xpEarned} 🫐 qo'shildi</p>
+            </div>
+          </div>
+
+          <div className="space-y-2 mb-4">
+            <ScoreBar label="Aniqlik" score={pronunciationResult.accuracy} color="bg-blue-400" />
+            <ScoreBar label="Ravonlik" score={pronunciationResult.fluency} color="bg-purple-400" />
+            <ScoreBar label="Talaffuz" score={pronunciationResult.pronunciation} color="bg-berry-mid" />
+          </div>
+
+          {pronunciationResult.wordScores?.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-4">
+              {pronunciationResult.wordScores.map((w, i) => (
+                <div key={i} title={w.issue || ''}
+                  className={`rounded-full px-3 py-1 text-sm font-bold cursor-default ${
+                    w.score >= 80 ? 'bg-green-100 text-green-700' :
+                    w.score >= 60 ? 'bg-yellow-100 text-yellow-700' :
+                    'bg-red-100 text-red-700'
+                  }`}>
+                  {w.word} {w.score >= 80 ? '✓' : '⚠️'}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="bg-white rounded-xl p-3 mb-4">
+            <p className="text-sm text-berry-deep">💬 {pronunciationResult.feedback_uz}</p>
+            {pronunciationResult.correct_pronunciation && (
+              <p className="text-xs text-gray-400 mt-1 font-mono">{pronunciationResult.correct_pronunciation}</p>
+            )}
+          </div>
+
+          <button onClick={next} className="w-full bg-berry-deep text-white rounded-full py-3 font-bold hover:scale-105 transition-all">
+            {isLast ? 'Tugatish →' : 'Keyingi gap →'}
+          </button>
+        </div>
+      )}
+
+      {/* Wrong scorecard */}
+      {status === 'wrong' && pronunciationResult && (
+        <div className={`border-2 rounded-2xl p-6 w-full max-w-md ${
+          overall >= 50 ? 'bg-orange-50 border-orange-400' : 'bg-red-50 border-red-400'
+        }`} style={{ animation: 'fadeInUp 0.3s ease-out' }}>
+          <div className="flex items-center justify-center gap-4 mb-4">
+            <div className={`w-20 h-20 rounded-full flex flex-col items-center justify-center text-white shrink-0 ${
+              overall >= 50 ? 'bg-orange-500' : 'bg-red-500'
+            }`}>
+              <span className="text-2xl font-black">{overall}</span>
+              <span className="text-xs">/100</span>
+            </div>
+            <div>
+              <p className={`text-lg font-black ${overall >= 50 ? 'text-orange-600' : 'text-red-600'}`}>
+                {overall >= 50 ? "Yaxshiroq bo'ling! 💪" : 'Yana mashq qiling! 🔄'}
+              </p>
+              <p className="text-xs text-gray-400 mt-0.5 italic">"{heard}"</p>
+            </div>
+          </div>
+
+          <div className="space-y-2 mb-4">
+            <ScoreBar label="Aniqlik" score={pronunciationResult.accuracy} color="bg-blue-400" />
+            <ScoreBar label="Ravonlik" score={pronunciationResult.fluency} color="bg-purple-400" />
+            <ScoreBar label="Talaffuz" score={pronunciationResult.pronunciation} color="bg-berry-mid" />
+          </div>
+
+          {pronunciationResult.wordScores?.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-4">
+              {pronunciationResult.wordScores.map((w, i) => (
+                <div key={i} title={w.issue || ''}
+                  className={`rounded-full px-3 py-1 text-sm font-bold cursor-default ${
+                    w.score >= 80 ? 'bg-green-100 text-green-700' :
+                    w.score >= 60 ? 'bg-yellow-100 text-yellow-700' :
+                    'bg-red-100 text-red-700'
+                  }`}>
+                  {w.word} {w.score >= 80 ? '✓' : '⚠️'}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {pronunciationResult.correct_pronunciation && (
+            <div className="bg-white rounded-xl p-3 mb-3">
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">🗣️ Qanday to'g'ri aytiladi:</p>
+              <p className="text-sm font-mono text-berry-deep">{pronunciationResult.correct_pronunciation}</p>
+            </div>
+          )}
+
+          <div className="bg-white rounded-xl p-3 mb-4">
+            <p className="text-sm text-berry-deep">💬 {pronunciationResult.feedback_uz}</p>
+          </div>
+
+          <button onClick={retry} className={`w-full text-white rounded-full py-3 font-bold hover:scale-105 transition-all mb-2 ${
+            overall >= 50 ? 'bg-orange-500' : 'bg-red-500'
+          }`}>
+            Qayta urinish 🔄
+          </button>
+
+          {overall >= 50 && (
+            <button onClick={next} className="w-full text-sm text-gray-400 hover:text-berry-mid transition-colors py-2">
+              {isLast ? 'Tugatish →' : "O'tkazib yuborish →"}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Global skip */}
+      {(status === 'idle' || status === 'recording') && (
+        <button onClick={() => onComplete && onComplete(xp)} className="text-sm text-gray-400 hover:text-berry-mid transition-colors">
+          O'tkazib yuborish →
+        </button>
+      )}
+    </div>
+  )
+}

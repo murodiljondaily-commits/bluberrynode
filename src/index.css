@@ -1,0 +1,77 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Blob float variants ── */
+@keyframes float {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  33%       { transform: translateY(-20px) rotate(3deg); }
+  66%       { transform: translateY(-10px) rotate(-2deg); }
+}
+@keyframes floatDiag1 {
+  0%, 100% { transform: translate(0, 0); }
+  50%       { transform: translate(-16px, -22px); }
+}
+@keyframes floatDiag2 {
+  0%, 100% { transform: translate(0, 0); }
+  50%       { transform: translate(14px, -18px); }
+}
+@keyframes floatRotate {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50%       { transform: translateY(-18px) rotate(10deg); }
+}
+
+/* ── Tree animations ── */
+@keyframes branchSway {
+  0%   { transform: rotate(-1.5deg); }
+  100% { transform: rotate(1.5deg); }
+}
+@keyframes leafFlutter {
+  0%   { transform: translateY(0px) rotate(0deg); }
+  100% { transform: translateY(-4px) rotate(6deg); }
+}
+@keyframes berryBounce {
+  0%   { transform: translateY(0px); }
+  100% { transform: translateY(-3px); }
+}
+
+@keyframes confettiFall {
+  0%   { transform: translateY(-20px) rotate(0deg);   opacity: 1; }
+  100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* SVG element transforms from own center */
+/* ── Flip card ── */
+.flip-card-inner {
+  transform-style: preserve-3d;
+  transition: transform 0.55s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.flipped { transform: rotateY(180deg); }
+.flip-card-face { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.flip-card-back-face { backface-visibility: hidden; -webkit-backface-visibility: hidden; transform: rotateY(180deg); }
+
+/* ── Wrong-answer shake ── */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-7px); }
+  40%, 80% { transform: translateX(7px); }
+}
+.shake { animation: shake 0.45s ease-in-out; }
+
+.svg-center {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+body {
+  font-family: 'Nunito', sans-serif;
+  background-color: #F5F0E8;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
