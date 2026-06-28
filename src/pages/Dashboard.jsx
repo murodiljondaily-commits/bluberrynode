@@ -29,11 +29,7 @@ const SUBJECT_META = {
   },
 }
 
-const MOCK_VOCAB = [
-  { word: 'Beautiful', translation: 'Chiroyli', lang: '🇬🇧' },
-  { word: 'Погода', translation: 'Ob-havo', lang: '🇷🇺' },
-  { word: 'Difference', translation: 'Farq', lang: '🔢' },
-]
+const SUBJECT_FLAGS = { english: '🇬🇧', russian: '🇷🇺', math: '🔢' }
 
 const LEVEL_LABELS = {
   beginner:     "Boshlang'ich",
@@ -75,21 +71,26 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [activeNav, setActiveNav] = useState('home')
   const [vocabStatus, setVocabStatus] = useState({})
+  const [recentVocab, setRecentVocab] = useState([])
 
   useEffect(() => {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { navigate('/login'); return }
 
-      const { data } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', session.user.id)
-        .single()
+      const [profileRes, vocabRes] = await Promise.allSettled([
+        supabase.from('profiles').select('*').eq('id', session.user.id).single(),
+        supabase.from('vocabulary_bank').select('word, translation, subject').eq('user_id', session.user.id).order('created_at', { ascending: false }).limit(5),
+      ])
 
+      const data = profileRes.status === 'fulfilled' ? profileRes.value.data : null
       if (!data?.onboarded) { navigate('/onboarding'); return }
 
       setProfile(data)
+
+      const vocab = vocabRes.status === 'fulfilled' ? vocabRes.value.data : []
+      setRecentVocab(vocab?.length > 0 ? vocab : [])
+
       setLoading(false)
     }
     load()
@@ -386,13 +387,16 @@ export default function Dashboard() {
             </button>
           </div>
           <div className="flex flex-col gap-3">
-            {MOCK_VOCAB.map((v, i) => (
+            {recentVocab.length === 0 && (
+              <p className="text-sm text-gray-400 text-center py-3">Hali so'zlar yo'q. Dars o'tgach bu yerda ko'rinadi!</p>
+            )}
+            {recentVocab.map((v, i) => (
               <div
                 key={i}
                 className="flex items-center justify-between bg-cream rounded-2xl px-4 py-3 gap-3"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <span className="text-xl shrink-0">{v.lang}</span>
+                  <span className="text-xl shrink-0">{SUBJECT_FLAGS[v.subject] || '📖'}</span>
                   <div className="min-w-0">
                     <div className="font-black text-berry-deep truncate">{v.word}</div>
                     <div className="text-sm text-gray-500 font-semibold">{v.translation}</div>

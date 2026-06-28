@@ -212,184 +212,6 @@ function GrammarBlock({ grammar, subject = 'english', onComplete }) {
   )
 }
 
-const VID_LETTER = ['A', 'B', 'C', 'D']
-
-// ─── BLOCK 3 — Embedded Video (mandatory) + Summary + MCQs ────────
-function VideoBlock({ video, onNext }) {
-  const [phase, setPhase]       = useState('watch') // 'watch' | 'questions'
-  const [videoEnded, setVideoEnded]   = useState(false)
-  const [videoFailed, setVideoFailed] = useState(false)
-  const [qIdx, setQIdx]         = useState(0)
-  const [answered, setAnswered] = useState(false)
-  const [selected, setSelected] = useState(null)
-  const [xpEarned, setXpEarned] = useState(0)
-  const playerRef               = useRef(null)
-
-  const videoId   = video?.video_id || ''
-  const title     = video?.title || 'Video dars'
-  const summary   = video?.summary_uz || ''
-  const questions = video?.video_questions || []
-
-  // ── YouTube IFrame Player API ──────────────────────────────────
-  useEffect(() => {
-    if (!videoId) { setVideoFailed(true); return }
-    let dead = false
-
-    const init = () => {
-      if (dead || !window.YT?.Player) return
-      try {
-        playerRef.current = new window.YT.Player('yt-embed', {
-          events: {
-            onStateChange: e => { if (!dead && e.data === 0) setVideoEnded(true) },
-            onError:       () => { if (!dead) setVideoFailed(true) },
-          },
-        })
-      } catch { if (!dead) setVideoFailed(true) }
-    }
-
-    if (window.YT?.Player) {
-      init()
-    } else {
-      if (!document.getElementById('yt-api-script')) {
-        const s = document.createElement('script')
-        s.id  = 'yt-api-script'
-        s.src = 'https://www.youtube.com/iframe_api'
-        document.head.appendChild(s)
-      }
-      const prev = window.onYouTubeIframeAPIReady
-      window.onYouTubeIframeAPIReady = () => { prev?.(); init() }
-    }
-
-    return () => {
-      dead = true
-      try { playerRef.current?.destroy() } catch {}
-      playerRef.current = null
-    }
-  }, [videoId])
-
-  // ── Helpers ───────────────────────────────────────────────────
-  function handleAnswer(idx) {
-    if (answered) return
-    setSelected(idx)
-    setAnswered(true)
-    if (idx === questions[qIdx]?.correct) setXpEarned(v => v + 15)
-  }
-
-  function nextQ() {
-    if (qIdx < questions.length - 1) {
-      setQIdx(i => i + 1); setAnswered(false); setSelected(null)
-    } else {
-      onNext(xpEarned)
-    }
-  }
-
-  // ── Watch phase ───────────────────────────────────────────────
-  if (phase === 'watch') {
-    const canProceed = videoEnded || videoFailed
-    return (
-      <div className="flex-1 overflow-y-auto px-4 py-6">
-        <div className="max-w-lg mx-auto" style={{ animation: 'fadeInUp 0.4s ease-out' }}>
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-wide text-center mb-3">📺 Video dars</p>
-
-          <div className="bg-white rounded-3xl shadow-xl overflow-hidden mb-4">
-            {/* iframe with enablejsapi=1 so YT.Player API can hook into it */}
-            {videoId && !videoFailed ? (
-              <div className="relative w-full bg-black" style={{ paddingBottom: '56.25%' }}>
-                <iframe
-                  id="yt-embed"
-                  src={`https://www.youtube.com/embed/${videoId}?enablejsapi=1&rel=0&modestbranding=1&cc_load_policy=1&iv_load_policy=3&origin=${encodeURIComponent(window.location.origin)}`}
-                  className="absolute inset-0 w-full h-full"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope"
-                  title={title}
-                  allowFullScreen
-                />
-              </div>
-            ) : (
-              <div className="bg-berry-glow flex flex-col items-center justify-center py-12 gap-2">
-                <span className="text-5xl">📺</span>
-                <p className="text-sm text-berry-mid font-semibold">Video yuklanmadi</p>
-              </div>
-            )}
-
-            <div className="p-5">
-              <h3 className="text-base font-black text-berry-deep mb-2">{title}</h3>
-              {summary && <p className="text-sm text-gray-600 leading-relaxed">{summary}</p>}
-            </div>
-          </div>
-
-          {/* Status / CTA — appears only when video ends or fails */}
-          {!canProceed ? (
-            <div className="flex items-center justify-center gap-2 py-4 text-sm text-gray-400">
-              <div className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
-              Videoni tomosha qiling, so'ng savollar paydo bo'ladi
-            </div>
-          ) : questions.length > 0 ? (
-            <button
-              onClick={() => setPhase('questions')}
-              className="w-full bg-green-600 text-white font-black py-4 rounded-full shadow-lg hover:bg-green-700 hover:scale-[1.02] transition-all"
-              style={{ animation: 'fadeInUp 0.4s ease-out' }}
-            >
-              Savollarni boshlash → (+{questions.length * 15} 🫐)
-            </button>
-          ) : (
-            <button
-              onClick={() => onNext(0)}
-              className="w-full bg-berry-deep text-white font-black py-4 rounded-full shadow-lg hover:bg-berry-dark hover:scale-[1.02] transition-all"
-              style={{ animation: 'fadeInUp 0.4s ease-out' }}
-            >
-              Davom etish →
-            </button>
-          )}
-        </div>
-      </div>
-    )
-  }
-
-  // ── Questions phase ───────────────────────────────────────────
-  const q = questions[qIdx]
-  return (
-    <div className="flex-1 flex flex-col items-center px-4 py-6">
-      <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">Video bo'yicha savol</p>
-      <p className="text-xs text-gray-400 mb-5">{qIdx + 1} / {questions.length}</p>
-      <div className="w-full max-w-lg">
-        <div className="bg-white rounded-2xl shadow-sm px-6 py-5 mb-4 text-center">
-          <p className="text-lg font-black text-berry-deep">{q?.question}</p>
-        </div>
-        <div className="flex flex-col gap-2 mb-4">
-          {q?.options?.map((opt, i) => {
-            let cls = 'bg-white border-2 border-berry-light text-gray-700 hover:border-berry-mid hover:bg-berry-glow/30'
-            let icon = null
-            if (answered) {
-              if (i === q.correct) { cls = 'bg-green-50 border-2 border-green-500 text-green-800'; icon = <span className="ml-auto font-black text-green-600 shrink-0">✓</span> }
-              else if (i === selected) { cls = 'bg-red-50 border-2 border-red-400 text-red-700'; icon = <span className="ml-auto font-black text-red-500 shrink-0">✗</span> }
-              else cls = 'bg-white border-2 border-gray-100 text-gray-400 opacity-50'
-            }
-            return (
-              <button key={i} onClick={() => handleAnswer(i)} disabled={answered}
-                className={`flex items-center gap-3 px-5 py-4 rounded-2xl font-semibold text-left transition-all duration-150 ${cls} disabled:cursor-default`}>
-                <span className="font-black text-xs text-berry-mid shrink-0 w-4">{VID_LETTER[i]}</span>
-                <span className="flex-1">{opt}</span>
-                {icon}
-              </button>
-            )
-          })}
-        </div>
-        {answered && (
-          <div className="text-center" style={{ animation: 'fadeInUp 0.3s ease-out' }}>
-            <p className={`font-black text-lg mb-3 ${selected === q.correct ? 'text-green-600' : 'text-red-500'}`}>
-              {selected === q.correct ? "To'g'ri! ✅ +15 🫐" : "Xato! ❌"}
-            </p>
-            <button onClick={nextQ}
-              className="bg-berry-deep text-white font-black px-10 py-3 rounded-full shadow-lg hover:bg-berry-dark hover:scale-[1.02] transition-all">
-              {qIdx < questions.length - 1 ? 'Keyingisi →' : 'Davom etish →'}
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
 // ─── BLOCK 4 — Exercises ──────────────────────────────────────────
 const LETTER = ['A', 'B', 'C', 'D']
 
@@ -677,8 +499,6 @@ function CompleteBlock({
   useEffect(() => {
     if (!userId || savedRef.current) return
     savedRef.current = true
-    const isDev = import.meta.env.DEV
-    const apiBase = isDev ? 'http://localhost:3001' : ''
 
     async function save() {
       // 1. Add AI vocab words to bank
@@ -929,7 +749,7 @@ export default function Lesson() {
     return () => clearInterval(t)
   }, [loading])
 
-  // Main load — 10s hard timeout, always falls through to content
+  // Main load — 25s hard timeout (plan ~8s + generate ~15s), always falls through to content
   useEffect(() => {
     if (apiLockRef.current) return
     apiLockRef.current = true
@@ -946,7 +766,7 @@ export default function Lesson() {
     const timeoutId = setTimeout(() => {
       console.log('⚠️ Load timeout — using fallback')
       finish(getFallbackContent(), getFallbackPlan())
-    }, 10000)
+    }, 25000)
 
     async function load() {
       try {

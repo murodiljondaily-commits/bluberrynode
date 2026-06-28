@@ -2,17 +2,20 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   try {
-    const { text = '', slow = false } = req.body
+    const { text = '', slow = false, speed } = req.body
     if (!text.trim()) return res.status(400).json({ error: 'text required' })
 
     const YANDEX_KEY = process.env.YANDEX_TTS_API_KEY
     if (!YANDEX_KEY) return res.status(500).json({ error: 'Yandex key not configured' })
 
+    // Support both `slow: true` (TutorSession) and `speed: 0.75` (voiceSystem)
+    const effectiveSpeed = speed != null ? String(Math.min(Math.max(speed, 0.1), 3.0)) : slow ? '0.75' : '1.0'
+
     const params = new URLSearchParams({
       text,
       voice: 'nigora',
       lang: 'uz-UZ',
-      speed: slow ? '0.75' : '1.0',
+      speed: effectiveSpeed,
       format: 'mp3',
     })
 
