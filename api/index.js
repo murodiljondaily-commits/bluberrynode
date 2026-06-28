@@ -1,2 +1,3 @@
-import app from '../server.js'
-export default app
+export default function handler(req, res) {
+  res.json({ status: 'ok', service: 'Blueberry Node API', version: '2.0' })
+}

@@ -67,8 +67,7 @@ export default function TutorSession({ level = 'a1', subject = 'english', topic 
   const flowCancel = useRef(false)
 
   const levelGroup = LEVEL_GROUP_MAP[level.toLowerCase().replace(/[\s-]/g, '')] || 'beginner'
-  const isDev = import.meta.env.DEV
-  const apiBase = isDev ? 'http://localhost:3001' : ''
+  const apiBase = ''
 
   const safeSet = useCallback((fn) => { if (isMounted.current) fn() }, [])
 

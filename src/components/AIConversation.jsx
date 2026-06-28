@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { sessionLogger } from '../lib/sessionLogger'
 
-const isDev = import.meta.env.DEV
-const API = isDev ? 'http://localhost:3001' : ''
+const API = ''
 
 const MAX_TURNS = 8
 

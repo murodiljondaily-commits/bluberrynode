@@ -689,7 +689,7 @@ function CompleteBlock({
       // 2. Analyze session with AI — builds tutor notes for the next lesson planner
       let aiNotes = lessonTopic ? `[TOPIC: ${lessonTopic}]\nSession completed.` : 'Session completed.'
       try {
-        const nr = await fetch(`${apiBase}/api/analyze-session`, {
+        const nr = await fetch('/api/analyze-session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -961,8 +961,7 @@ export default function Lesson() {
         sessionLogger.setLessonNumber(lessonNum)
         engineRef.current = new AdaptiveEngine(data?.current_level?.[subject] || 'elementary')
 
-        const isDev = import.meta.env.DEV
-        const apiBase = isDev ? 'http://localhost:3001' : ''
+        const apiBase = ''
         const firstName = data?.full_name?.split(' ')[0] || "o'quvchi"
 
         const localFallbackPlan = {
@@ -977,22 +976,16 @@ export default function Lesson() {
 
         let plan = localFallbackPlan
         try {
-          const planRes = await clientFetch(`${apiBase}/api/plan-lesson`, {
+          const planRes = await clientFetch('/api/plan-lesson', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              context: {
-                userId: session.user.id,
-                studentName: data?.full_name || firstName,
-                subject,
-                level: data?.current_level?.[subject] || 'elementary',
-                streak: data?.streak || 0,
-                currentLesson: lessonNum - 1,
-                dailyMinutes: data?.daily_minutes || 30,
-                totalLessons: data?.total_lessons_completed || 0,
-              },
+              userId: session.user.id,
+              subject,
+              lessonNumber: lessonNum,
+              profile: data,
             }),
-          }, 6000)
+          }, 8000)
           if (planRes.ok) {
             const aiPlan = await planRes.json()
             if (aiPlan?.topic) plan = aiPlan
@@ -1001,17 +994,15 @@ export default function Lesson() {
         setLessonPlan(plan)
 
         try {
-          const genRes = await clientFetch(`${apiBase}/api/generate-lesson`, {
+          const genRes = await clientFetch('/api/generate-lesson', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               plan,
               subject,
-              level: data?.current_level?.[subject] || 'elementary',
-              lessonNumber: lessonNum,
-              weakWords: plan?.reviewWords || plan?.focusWords || [],
+              profile: data,
             }),
-          }, 7000)
+          }, 9000)
 
           if (genRes.ok) {
             const content = await genRes.json()
@@ -1052,7 +1043,7 @@ export default function Lesson() {
   const progressPct  = (block / TOTAL_BLOCKS) * 100
 
   const vocab     = lessonContent?.vocabulary || []
-  const grammar   = lessonContent?.grammar_explanation
+  const grammar   = lessonContent?.grammar_explanation || lessonContent?.grammar
   const exercises = lessonContent?.exercises || []
   const story     = lessonContent?.story
   const video     = lessonContent?.youtube_video
