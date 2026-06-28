@@ -2,7 +2,10 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   try {
-    const { sessionData, studentName, subject, level } = req.body
+    const { sessionData } = req.body
+    const studentName = req.body.studentName
+    const subject = req.body.subject || sessionData?.subject || 'english'
+    const level = req.body.level
     const topic = sessionData?.topic || ''
     const accuracy = sessionData?.accuracy_percent || 0
     const wrongWords = sessionData?.words_wrong || []
