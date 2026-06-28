@@ -6,12 +6,24 @@ import TutorSession from '../components/TutorSession'
 import SessionTimer from '../components/SessionTimer'
 import SubtleOrbs from '../components/SubtleOrbs'
 import VideoLesson from '../components/VideoLesson'
-import AIConversation from '../components/AIConversation'
+import RealtimeConversation from '../components/RealtimeConversation'
 import { sessionLogger } from '../lib/sessionLogger'
 import { AdaptiveEngine } from '../lib/exerciseEngine'
 import { vocabularyManager } from '../lib/vocabularyManager'
-import { speak } from '../lib/voiceSystem'
+import { speak, speakUzbek, speakEnglish } from '../lib/voiceSystem'
 import { playCorrect, playWrong, playCelebration, playFlip } from '../lib/soundEffects'
+
+// ── Fisher-Yates shuffle for exercise options (Fix 4: randomize correct position)
+function shuffleOptions(exercise) {
+  const options = [...(exercise.options || [])]
+  if (options.length === 0) return exercise
+  const correctAnswer = options[exercise.correct]
+  for (let i = options.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [options[i], options[j]] = [options[j], options[i]]
+  }
+  return { ...exercise, options, correct: options.indexOf(correctAnswer) }
+}
 
 const clientFetch = (url, opts, ms = 30000) => {
   const ctrl = new AbortController()
@@ -81,7 +93,7 @@ function VocabBlock({ words, subject = 'english', onComplete }) {
     playFlip()
     if (next) {
       setSeenBack(true)
-      speak(w.word, subject).catch(() => {})
+      speak(w.audio_text || w.word, subject).catch(() => {})
     }
   }
 
@@ -119,7 +131,7 @@ function VocabBlock({ words, subject = 'english', onComplete }) {
             )}
             <p className="text-xs text-gray-400 font-semibold mt-3">Bosing →</p>
             <button
-              onClick={e => { e.stopPropagation(); speak(w.word, subject).catch(() => {}) }}
+              onClick={e => { e.stopPropagation(); speak(w.audio_text || w.word, subject).catch(() => {}) }}
               className="text-berry-mid text-xl hover:text-berry-deep transition-colors mt-1"
               title="Tinglash"
             >🔊</button>
@@ -215,7 +227,7 @@ function GrammarBlock({ grammar, subject = 'english', onComplete }) {
 // ─── BLOCK 4 — Exercises ──────────────────────────────────────────
 const LETTER = ['A', 'B', 'C', 'D']
 
-function ExercisesBlock({ exercises, onComplete, onExerciseLog }) {
+function ExercisesBlock({ exercises, subject = 'english', onComplete, onExerciseLog }) {
   const [exIdx, setExIdx] = useState(0)
   const [answered, setAnswered] = useState(false)
   const [isCorrect, setIsCorrect] = useState(null)
@@ -228,6 +240,15 @@ function ExercisesBlock({ exercises, onComplete, onExerciseLog }) {
   const ex = exercises[exIdx]
   const total = exercises.length
   const isFill = ex?.type === 'fillBlank' || ex?.type === 'fill'
+
+  // Fix 7: Auto-read question with Nigora when exercise changes
+  useEffect(() => {
+    if (!ex) return
+    const prompt = isFill
+      ? "Bo'shliqni to'ldiring"
+      : `${ex.question} — tarjimasi nima?`
+    speakUzbek(prompt).catch(() => {})
+  }, [exIdx]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function checkChoice(optIdx) {
     if (answered) return
@@ -246,11 +267,14 @@ function ExercisesBlock({ exercises, onComplete, onExerciseLog }) {
       setXpEarned(x => x + 10)
       setIsCorrect(true)
       playCorrect()
+      speakUzbek("To'g'ri! Zo'r!").catch(() => {})
     } else {
       setIsCorrect(false)
       setShaking(true)
       setTimeout(() => setShaking(false), 450)
       playWrong()
+      const correctText = ex.options?.[ex.correct] || ''
+      speakUzbek(`Xato. To'g'ri javob: ${correctText}`).catch(() => {})
     }
     setAnswered(true)
   }
@@ -364,7 +388,13 @@ function StoryBlock({ story, subject = 'english', onComplete }) {
     if (answered) return
     setSelected(idx)
     setAnswered(true)
-    if (idx === q.correct) setXp(v => v + 10)
+    if (idx === q.correct) {
+      setXp(v => v + 10)
+      playCorrect()
+      speakUzbek("To'g'ri!").catch(() => {})
+    } else {
+      playWrong()
+    }
   }
 
   function nextQuestion() {
@@ -758,6 +788,10 @@ export default function Lesson() {
     function finish(content, plan) {
       if (done) return
       done = true
+      // Fix 4: shuffle exercise answer positions once on load so they're stable
+      if (content?.exercises) {
+        content.exercises = content.exercises.map(shuffleOptions)
+      }
       setLessonContent(content)
       if (plan) setLessonPlan(p => p || plan)
       setLoading(false)
@@ -1008,6 +1042,7 @@ export default function Lesson() {
           exercises.length > 0
             ? <ExercisesBlock
                 exercises={exercises}
+                subject={subject}
                 onExerciseLog={handleExerciseLog}
                 onComplete={(xp, correct, total) => {
                   addXP(xp)
@@ -1048,10 +1083,11 @@ export default function Lesson() {
         )}
 
         {block === 7 && (
-          <AIConversation
-            topic={lessonPlan?.topic || 'greetings'}
-            level={profile?.current_level?.[subject] || 'elementary'}
+          <RealtimeConversation
+            topic={lessonPlan?.topic || 'Daily Routines'}
             subject={subject}
+            level={profile?.current_level?.[subject] || 'elementary'}
+            studentName={profile?.full_name || 'Student'}
             onComplete={xp => { addXP(xp); setBlock(8) }}
           />
         )}

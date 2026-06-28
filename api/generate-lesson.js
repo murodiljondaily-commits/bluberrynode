@@ -124,8 +124,8 @@ Generate COMPLETE lesson content. Return ONLY valid JSON, no markdown.
     "common_mistake": "Most common mistake in Uzbek",
     "tip": "Memory tip in Uzbek"
   },
-  "exercises": [EXACTLY 20 items with: type (fillBlank or translate), question, options (4 items), correct (0-3), explanation_uz, word],
-  "speaking_sentences": [EXACTLY 10 items with: text, uzbek, pronunciation_tip, audio_intro],
+  "exercises": [EXACTLY 20 items with: type (fillBlank or translate), question, options (4 items), correct (0-3 — DISTRIBUTE EVENLY: 5 correct=0, 5 correct=1, 5 correct=2, 5 correct=3), explanation_uz, word],
+  "speaking_sentences": [EXACTLY 8 items with: text, uzbek, pronunciation_tip, audio_intro],
   "story": {
     "title": "Story title",
     "title_uz": "Story title in Uzbek",

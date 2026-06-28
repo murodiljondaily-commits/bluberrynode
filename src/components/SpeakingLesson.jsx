@@ -3,24 +3,35 @@ import { playCorrect, playWrong } from '../lib/soundEffects'
 
 const FALLBACK_SENTENCES = {
   english: [
-    "I eat bread every morning.",
+    "I wake up at seven every morning.",
     "She goes to school every day.",
-    "They drink water.",
-    "He reads a book.",
-    "We sleep at ten."
+    "They drink water after exercise.",
+    "He reads a book before bed.",
+    "We have breakfast together.",
+    "I brush my teeth every morning.",
+    "She cooks dinner at six.",
+    "He goes to work by bus.",
   ],
   russian: [
+    "Меня зовут Али.",
     "Я иду домой.",
     "Она читает книгу.",
     "Мы пьём воду.",
-    "Он спит.",
-    "Они идут в школу."
+    "Как дела? Хорошо, спасибо.",
+    "Я из Узбекистана.",
+    "До свидания! Удачи!",
+    "Спасибо за помощь.",
   ],
   math: [
-    "Two plus two equals four.",
-    "Ten minus three is seven.",
-    "Five times four is twenty."
-  ]
+    "Besh qo'shishlik uch — sakkiz.",
+    "O'n minus to'rt — olti.",
+    "Uch marta to'rt — o'n ikki.",
+    "O'n ikki bo'lishlik to'rt — uch.",
+    "Yigirma besh foiz — to'rtdan bir.",
+    "Yetti marta sakkiz — ellik olti.",
+    "To'qson bo'lishlik o'n — to'qqiz.",
+    "Yuz so'mning yarmi — ellik so'm.",
+  ],
 }
 
 const ScoreBar = ({ label, score, color }) => (
@@ -52,8 +63,6 @@ export default function SpeakingLesson({ subject = 'english', sentences: propSen
   const list = (propSentences?.length > 0 ? propSentences : fallback)
   const current = list[index]
   const isLast = index >= list.length - 1
-  const isDev = import.meta.env.DEV
-  const apiBase = isDev ? 'http://localhost:3001' : ''
 
   // Safety: if processing gets stuck for >35s, reset to idle
   useEffect(() => {
@@ -100,7 +109,7 @@ export default function SpeakingLesson({ subject = 'english', sentences: propSen
         fd.append('language', subject === 'russian' ? 'ru' : 'en')
         fd.append('expected', current)
 
-        const response = await fetch(`${apiBase}/api/transcribe`, {
+        const response = await fetch('/api/transcribe', {
           method: 'POST',
           body: fd,
         })
@@ -168,7 +177,7 @@ export default function SpeakingLesson({ subject = 'english', sentences: propSen
 
       {/* Sentence */}
       <div className="text-center">
-        <p className="text-sm text-gray-400 mb-2">Gap {index + 1} / {list.length}</p>
+        <p className="text-sm text-gray-400 mb-2">Gap {index + 1}/{list.length} 🎤</p>
         <p className="text-sm text-berry-mid font-semibold mb-3">Quyidagi gapni aytib ko'ring:</p>
         <p className="text-2xl font-black text-berry-deep bg-berry-glow rounded-2xl px-6 py-4">{current}</p>
       </div>
