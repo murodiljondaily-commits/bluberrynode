@@ -5,8 +5,9 @@ export default async function handler(req, res) {
     const { text = '', slow = false, speed } = req.body
     if (!text.trim()) return res.status(400).json({ error: 'text required' })
 
-    const YANDEX_KEY = process.env.YANDEX_TTS_API_KEY
+    const YANDEX_KEY = process.env.YANDEX_TTS_API_KEY || process.env.VITE_YANDEX_API_KEY
     if (!YANDEX_KEY) return res.status(500).json({ error: 'Yandex key not configured' })
+    const FOLDER_ID = process.env.YANDEX_FOLDER_ID || process.env.VITE_YANDEX_FOLDER_ID
 
     // Support both `slow: true` (TutorSession) and `speed: 0.75` (voiceSystem)
     const effectiveSpeed = speed != null ? String(Math.min(Math.max(speed, 0.1), 3.0)) : slow ? '0.75' : '1.0'
@@ -17,6 +18,7 @@ export default async function handler(req, res) {
       lang: 'uz-UZ',
       speed: effectiveSpeed,
       format: 'mp3',
+      ...(FOLDER_ID ? { folderId: FOLDER_ID } : {}),
     })
 
     const r = await fetch('https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize', {

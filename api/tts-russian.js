@@ -5,8 +5,9 @@ export default async function handler(req, res) {
     const { text = '', speed = 1.0 } = req.body
     if (!text.trim()) return res.status(400).json({ error: 'text required' })
 
-    const YANDEX_KEY = process.env.YANDEX_TTS_API_KEY
+    const YANDEX_KEY = process.env.YANDEX_TTS_API_KEY || process.env.VITE_YANDEX_API_KEY
     if (!YANDEX_KEY) return res.status(500).json({ error: 'Yandex key not configured' })
+    const FOLDER_ID = process.env.YANDEX_FOLDER_ID || process.env.VITE_YANDEX_FOLDER_ID
 
     const params = new URLSearchParams({
       text,
@@ -14,6 +15,7 @@ export default async function handler(req, res) {
       lang: 'ru-RU',
       speed: String(speed),
       format: 'mp3',
+      ...(FOLDER_ID ? { folderId: FOLDER_ID } : {}),
     })
 
     const r = await fetch('https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize', {
