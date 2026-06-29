@@ -188,44 +188,43 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   try {
-    const { plan, subject = 'english', profile } = req.body
+    const { plan, subject = 'english', profile, uiLanguage } = req.body
     const topic = plan?.topic || 'Lesson'
     const level = plan?.level || 'A1'
     const difficulty = plan?.difficulty || 'medium'
-    console.log('Generate lesson:', subject, topic, level, difficulty)
+    // The student reads explanations in their UI language (uz or ru), not always Uzbek.
+    const uiLang = uiLanguage || profile?.preferred_language || profile?.ui_language || 'uz'
+    const explainLang = uiLang === 'ru' ? 'Russian' : 'Uzbek'
+    console.log('Generate lesson:', subject, topic, level, difficulty, '| explain:', explainLang)
 
     // Fully personalized per user: every lesson is generated fresh (no shared cache).
+    // NOTE: the JSON keys stay *_uz for frontend compatibility, but their CONTENT is
+    // written in ${explainLang} (the student's UI language).
     const systemInstructions = {
-      english: `You are generating English lesson content for an Uzbek speaker.
+      english: `You are generating English lesson content. The student's explanation language is ${explainLang}.
 CRITICAL RULES:
-- vocabulary.word = English word/phrase (NEVER Uzbek)
-- vocabulary.translation = Uzbek translation
-- All explanation fields = Uzbek language
-- examples: English sentence + Uzbek translation
-- exercises: English questions with Uzbek explanation_uz
-- story: English text + Uzbek text_uz
-- NEVER put Uzbek in the 'word' field`,
+- vocabulary.word = English word/phrase (NEVER ${explainLang})
+- vocabulary.translation = ${explainLang}
+- ALL explanatory text (grammar_explanation.title/explanation/rule/tip/common_mistake, every explanation_uz, example_uz, text_uz, question_uz) MUST be written in ${explainLang}
+- The ONLY English text allowed is: the vocabulary words, the target example sentences, the exercise question stems, and the story 'text'. Everything that TEACHES or EXPLAINS must be in ${explainLang} so a beginner can understand.
+- NEVER put ${explainLang} in the 'word' field`,
 
-      russian: `You are generating Russian lesson content for an Uzbek speaker.
+      russian: `You are generating Russian lesson content. The student's explanation language is ${explainLang}.
 CRITICAL RULES:
 - vocabulary.word = Russian word in CYRILLIC only (привет, спасибо)
-- vocabulary.translation = Uzbek translation
-- All explanation fields = Uzbek language
-- examples: Russian (Cyrillic) + Uzbek translation
-- exercises: Russian questions, Uzbek explanation_uz
-- story: Russian text in Cyrillic + Uzbek text_uz
+- vocabulary.translation = ${explainLang}
+- ALL explanatory text (grammar_explanation.*, explanation_uz, example_uz, text_uz, question_uz) MUST be in ${explainLang}
+- examples: Russian (Cyrillic) target + ${explainLang} translation
 - NEVER use Latin letters for Russian words
-- NEVER put English content in Russian lesson`,
+- If ${explainLang} is Russian, still keep target vocabulary in Cyrillic but make explanations clear and simple`,
 
-      math: `You are generating Math lesson content for an Uzbek speaker.
+      math: `You are generating Math lesson content. ALL content AND explanations in ${explainLang}.
 CRITICAL RULES:
-- ALL content in UZBEK language ONLY
-- vocabulary.word = math term in Uzbek (kasrlar, foizlar)
-- vocabulary.translation = definition in Uzbek
-- exercises: math problems with Uzbek text, use so'm currency, Uzbek names (Ali, Malika, Kamol)
-- Use Uzbek cities: Toshkent, Samarqand, Buxoro
-- story: Uzbek word problem story
-- NEVER put English or Russian in math lesson`,
+- vocabulary.word = math term in ${explainLang}
+- vocabulary.translation = definition in ${explainLang}
+- exercises: math word problems in ${explainLang}, use so'm currency and local names (Ali, Malika, Kamol), cities (Toshkent, Samarqand)
+- story: ${explainLang} word-problem story
+- numbers and math notation are universal`,
     }
 
     const sys = systemInstructions[subject] || systemInstructions.english

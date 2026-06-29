@@ -41,6 +41,7 @@ export default function Settings() {
   const [parentEmail, setParentEmail] = useState('')
   const [parentTelegram, setParentTelegram] = useState('')
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   useEffect(() => {
     async function load() {
@@ -57,7 +58,7 @@ export default function Settings() {
         setSubjects(data.subjects || [])
         setTelegramId(data.telegram_id || '')
         setParentEmail(data.parent_email || '')
-        setParentTelegram(data.parent_telegram || '')
+        setParentTelegram(data.parent_telegram_id || '')
       }
       setLoading(false)
     }
@@ -67,17 +68,23 @@ export default function Settings() {
   async function handleSave() {
     if (!userId) return
     setSaving(true)
+    setSaveError('')
+    // Use ONLY columns that exist on profiles (parent_telegram_id, not parent_telegram).
     const { error } = await supabase.from('profiles').update({
       full_name: fullName,
       daily_minutes: dailyMinutes,
       subjects,
       telegram_id: telegramId || null,
       parent_email: parentEmail || null,
-      parent_telegram: parentTelegram || null,
+      parent_telegram_id: parentTelegram || null,
+      preferred_language: lang,
     }).eq('id', userId)
 
     setSaving(false)
-    if (!error) {
+    if (error) {
+      console.error('Settings save failed:', error)
+      setSaveError(error.message || 'Saqlashda xatolik')
+    } else {
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
     }
@@ -97,25 +104,15 @@ export default function Settings() {
     navigate('/')
   }
 
-  function toggleSubject(id) {
-    setSubjects(prev =>
-      prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
-    )
+  // Only allow REMOVING an active subject here. Adding a new subject must go through
+  // the level-check flow (never by just ticking a box).
+  function removeSubject(id) {
+    setSubjects(prev => prev.filter(s => s !== id))
   }
 
-  // One-tap add a new subject: persist to profile.subjects, seed its progress row,
-  // then send the user into onboarding/assessment for that subject.
-  async function addSubject(sub) {
-    if (!userId || subjects.includes(sub)) return
-    const updated = [...subjects, sub]
-    setSubjects(updated)
-    await supabase.from('profiles').update({ subjects: updated }).eq('id', userId)
-    await supabase.from('student_progress').upsert({
-      user_id: userId,
-      subject: sub,
-      current_lesson: 1,
-      current_level: 'A0',
-    }, { onConflict: 'user_id,subject' }).then(() => {}, () => {})
+  // Add a new subject -> always via the onboarding level-check (test or start-from-A0).
+  // Nothing is persisted until the student completes that flow.
+  function addSubject(sub) {
     navigate('/onboarding', { state: { addSubject: sub } })
   }
 
@@ -146,6 +143,12 @@ export default function Settings() {
             {saving ? '...' : saved ? 'Saqlandi ✓' : 'Saqlash'}
           </button>
         </div>
+
+        {saveError && (
+          <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3 mb-4 text-sm text-red-700 font-semibold">
+            ❌ {saveError}
+          </div>
+        )}
 
         {/* Profile */}
         <Section title="Profil">
@@ -180,20 +183,20 @@ export default function Settings() {
             ))}
           </div>
 
-          <p className="text-sm font-bold text-gray-600 mb-2">Fanlar</p>
+          <p className="text-sm font-bold text-gray-600 mb-2">Faol fanlar</p>
           <div className="flex flex-col gap-2">
-            {SUBJECTS_LIST.map(({ id, label, flag }) => (
-              <button key={id} onClick={() => toggleSubject(id)}
-                className={`flex items-center gap-3 px-4 py-3 rounded-2xl font-semibold text-left transition-all border ${
-                  subjects.includes(id)
-                    ? 'bg-berry-glow border-berry-mid text-berry-deep'
-                    : 'bg-gray-50 border-gray-200 text-gray-500'
-                }`}>
+            {SUBJECTS_LIST.filter(s => subjects.includes(s.id)).map(({ id, label, flag }) => (
+              <div key={id}
+                className="flex items-center gap-3 px-4 py-3 rounded-2xl font-semibold border bg-berry-glow border-berry-mid text-berry-deep">
                 <span className="text-xl">{flag}</span>
                 <span>{label}</span>
-                <span className="ml-auto">{subjects.includes(id) ? '✓' : '+'}</span>
-              </button>
+                <button onClick={() => removeSubject(id)}
+                  className="ml-auto text-xs font-bold text-red-400 hover:text-red-600">✕ olib tashlash</button>
+              </div>
             ))}
+            {subjects.length === 0 && (
+              <p className="text-xs text-gray-400">Hali fan yo'q. Pastdan level-check orqali qo'shing.</p>
+            )}
           </div>
         </Section>
 

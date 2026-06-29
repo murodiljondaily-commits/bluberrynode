@@ -48,7 +48,7 @@ export default function VideoLesson({ videoId, topic, subject = 'english', level
     let alive = true
     fetch('/api/youtube-search', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ subject, topic, level, kind }),
+      body: JSON.stringify({ subject, topic, level, kind, uiLang: lang }),
     })
       .then(r => r.json())
       .then(d => { if (alive && d?.videoId) setVideo(d) })
@@ -82,7 +82,7 @@ export default function VideoLesson({ videoId, topic, subject = 'english', level
   function startWatching() {
     const url = video?.url || `https://www.youtube.com/watch?v=${videoId}`
     window.open(url, '_blank', 'noopener')
-    setSecondsLeft((video?.durationSec || 360) + 300) // video length + 5 min
+    setSecondsLeft(video?.durationSec || 360) // timer = the video's actual length
     setPhase('watching')
     // Register a server-side session so the bot can "call back" if the student
     // never returns (escalating Telegram reminders). Best-effort, non-blocking.

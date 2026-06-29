@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import AssessmentTest from '../components/AssessmentTest'
 import BlueberryOrbs from '../components/BlueberryOrbs'
@@ -137,10 +137,17 @@ const LEVEL_BADGE = {
   advanced:     'bg-green-100 text-green-700',
 }
 
+// CEFR level stored in student_progress, derived from the legacy assessment level.
+const LEVEL_TO_CEFR = { beginner: 'A0', elementary: 'A1', intermediate: 'B1', advanced: 'C1' }
+
 export default function Onboarding() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const addSubjectId = location.state?.addSubject || null   // "add a subject" mode
+  const addMode = !!addSubjectId
+
   const [step,             setStep]             = useState(0)
-  const [selectedSubjects, setSelectedSubjects] = useState([])
+  const [selectedSubjects, setSelectedSubjects] = useState(addMode ? [addSubjectId] : [])
   const [quizIndex,        setQuizIndex]        = useState(0)
   const [levels,           setLevels]           = useState({})
   const [dailyMinutes,     setDailyMinutes]     = useState(30)
@@ -151,6 +158,8 @@ export default function Onboarding() {
     async function checkOnboarded() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { navigate('/login'); return }
+      // In add-subject mode we INTENTIONALLY allow an already-onboarded user through.
+      if (addMode) return
       const { data } = await supabase
         .from('profiles')
         .select('onboarded')
@@ -159,7 +168,7 @@ export default function Onboarding() {
       if (data?.onboarded) navigate('/dashboard')
     }
     checkOnboarded()
-  }, [navigate])
+  }, [navigate, addMode])
 
   function toggleSubject(id) {
     setSelectedSubjects(prev =>
@@ -170,6 +179,7 @@ export default function Onboarding() {
   function handleTestComplete(score, level) {
     const subject = selectedSubjects[quizIndex]
     setLevels(prev => ({ ...prev, [subject]: level }))
+    if (addMode) { finishAddSubject(level); return }
     if (quizIndex < selectedSubjects.length - 1) {
       setQuizIndex(prev => prev + 1)
     } else {
@@ -187,6 +197,7 @@ export default function Onboarding() {
     return roadmap
   }
 
+  // Finish a brand-new onboarding.
   async function handleFinish() {
     setSaving(true)
     setError('')
@@ -201,10 +212,55 @@ export default function Onboarding() {
         onboarded:     true,
       }).eq('id', user.id)
       if (err) throw err
+      await seedProgress(user.id, levels)
       navigate('/dashboard')
     } catch (e) {
       setError(e.message)
       setSaving(false)
+    }
+  }
+
+  // Add-subject mode: MERGE the one new subject into the existing profile (after a
+  // level check or an explicit "start from A0"). Never overwrites other subjects.
+  async function finishAddSubject(assessedLevel) {
+    setSaving(true)
+    setError('')
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      const { data: prof } = await supabase.from('profiles')
+        .select('subjects, current_level, roadmap').eq('id', user.id).single()
+
+      const level = assessedLevel || 'beginner'
+      const newSubjects = [...new Set([...(prof?.subjects || []), addSubjectId])]
+      const newLevels = { ...(prof?.current_level || {}), [addSubjectId]: level }
+      const newRoadmap = {
+        ...(prof?.roadmap || {}),
+        [addSubjectId]: (MILESTONES[addSubjectId][level] || []).map(m => ({ ...m, done: false })),
+      }
+      const { error: err } = await supabase.from('profiles').update({
+        subjects: newSubjects, current_level: newLevels, roadmap: newRoadmap,
+      }).eq('id', user.id)
+      if (err) throw err
+
+      await supabase.from('student_progress').upsert({
+        user_id: user.id, subject: addSubjectId,
+        current_lesson: 1, current_level: LEVEL_TO_CEFR[level] || 'A0',
+      }, { onConflict: 'user_id,subject' })
+
+      navigate('/roadmap')
+    } catch (e) {
+      setError(e.message)
+      setSaving(false)
+    }
+  }
+
+  // Seed student_progress rows for a fresh multi-subject onboarding.
+  async function seedProgress(userId, computedLevels) {
+    for (const s of selectedSubjects) {
+      await supabase.from('student_progress').upsert({
+        user_id: userId, subject: s,
+        current_lesson: 1, current_level: LEVEL_TO_CEFR[computedLevels[s] || 'beginner'] || 'A0',
+      }, { onConflict: 'user_id,subject' }).then(() => {}, () => {})
     }
   }
 
@@ -223,6 +279,38 @@ export default function Onboarding() {
 
   // ── Steps 0, 1, 3, 4: Card-based wrapper ──────────────────────
   function renderCardContent() {
+    // Step 0 (add-subject mode): strict choice — level test OR start from A0.
+    if (step === 0 && addMode) {
+      const meta = SUBJECT_META[addSubjectId]
+      return (
+        <div key="addchoice" style={{ animation: 'fadeInUp 0.35s ease-out' }}>
+          <div className="text-5xl text-center mb-4">{meta?.flag}</div>
+          <h1 className="text-2xl font-black text-berry-deep text-center mb-2">
+            {meta?.label} qo&#x2018;shish
+          </h1>
+          <p className="text-gray-500 font-semibold text-center mb-7 leading-relaxed">
+            Yangi fanni boshlash uchun darajangizni aniqlang yoki noldan (A0) boshlang.
+          </p>
+          {error && <p className="text-red-500 text-sm font-semibold text-center mb-3">{error}</p>}
+          <div className="flex flex-col gap-3">
+            <button
+              onClick={() => { setQuizIndex(0); setStep(2) }}
+              className="w-full bg-berry-deep text-white font-black text-lg py-4 rounded-full shadow-lg hover:bg-berry-dark hover:scale-[1.02] transition-all"
+            >
+              📝 Darajamni aniqlash (test)
+            </button>
+            <button
+              onClick={() => finishAddSubject('beginner')}
+              disabled={saving}
+              className="w-full border-2 border-berry-mid text-berry-deep font-bold py-4 rounded-full hover:bg-berry-glow transition-all disabled:opacity-60"
+            >
+              {saving ? 'Saqlanmoqda...' : '🌱 Noldan boshlash (A0)'}
+            </button>
+          </div>
+        </div>
+      )
+    }
+
     // Step 0: Welcome
     if (step === 0) {
       return (

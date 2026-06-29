@@ -287,81 +287,73 @@ function MediaBlock({ video, topic, subject, level, session, onComplete }) {
 const LETTER = ['A', 'B', 'C', 'D']
 
 function ExercisesBlock({ exercises, subject = 'english', onComplete, onExerciseLog, onSkip }) {
+  const total = exercises.length
   const [exIdx, setExIdx] = useState(0)
-  const [answered, setAnswered] = useState(false)
-  const [isCorrect, setIsCorrect] = useState(null)
-  const [selected, setSelected] = useState(null)
+  const [picks, setPicks] = useState(() => Array(total).fill(undefined)) // selected option per question
   const [shaking, setShaking] = useState(false)
-  const [score, setScore] = useState(0)
-  const [xpEarned, setXpEarned] = useState(0)
+  const loggedRef = useRef(new Set())   // log each question's first answer only once
+  const skippedRef = useRef(new Set())
   const startRef = useRef(Date.now())
 
   const ex = exercises[exIdx]
-  const total = exercises.length
   const isFill = ex?.type === 'fillBlank' || ex?.type === 'fill'
+  const pick = picks[exIdx]
+  const answered = pick !== undefined && pick !== null
+  const isCorrect = answered && pick === ex?.correct
+  const isLast = exIdx >= total - 1
 
   function checkChoice(optIdx) {
     if (answered) return
-    setSelected(optIdx)
-    const timeMs = Date.now() - startRef.current
+    setPicks(p => { const n = [...p]; n[exIdx] = optIdx; return n })
     const isCorr = optIdx === ex.correct
-    onExerciseLog?.({
-      question: ex.question,
-      userAnswer: ex.options?.[optIdx] || '',
-      correctAnswer: ex.options?.[ex.correct] || '',
-      isCorrect: isCorr,
-      timeMs,
-    })
-    if (isCorr) {
-      setScore(s => s + 1)
-      setXpEarned(x => x + 10)
-      setIsCorrect(true)
-      playCorrect() // sound effect only — no spoken voice
-    } else {
-      setIsCorrect(false)
-      setShaking(true)
-      setTimeout(() => setShaking(false), 450)
-      playWrong() // sound effect only — no spoken voice
+    if (!loggedRef.current.has(exIdx)) {
+      loggedRef.current.add(exIdx)
+      onExerciseLog?.({
+        question: ex.question,
+        userAnswer: ex.options?.[optIdx] || '',
+        correctAnswer: ex.options?.[ex.correct] || '',
+        isCorrect: isCorr,
+        timeMs: Date.now() - startRef.current,
+      })
     }
-    setAnswered(true)
+    if (isCorr) playCorrect()
+    else { setShaking(true); setTimeout(() => setShaking(false), 450); playWrong() }
   }
 
-  function next() {
-    if (exIdx < total - 1) {
-      startRef.current = Date.now()
-      setExIdx(i => i + 1)
-      setAnswered(false)
-      setIsCorrect(null)
-      setSelected(null)
-    } else {
-      // Include the final answer's correctness in score
-      const finalScore = score + (isCorrect ? 1 : 0)
-      onComplete(xpEarned, finalScore, total)
-    }
+  function goTo(i) { if (i >= 0 && i < total) { startRef.current = Date.now(); setExIdx(i) } }
+
+  function finish() {
+    const score = picks.reduce((s, p, i) => s + (p === exercises[i].correct ? 1 : 0), 0)
+    onComplete(score * 10, score, total)
   }
 
-  function skip() {
-    if (answered) return
-    onSkip?.(ex)
-    next()
+  function primary() {
+    // Unanswered = treat the advance as a skip (saved for review).
+    if (!answered && !skippedRef.current.has(exIdx)) { skippedRef.current.add(exIdx); onSkip?.(ex) }
+    if (isLast) finish()
+    else goTo(exIdx + 1)
   }
 
   if (!ex) return null
 
   return (
     <div className="flex-1 flex flex-col items-center px-4 py-6">
-      {/* Step dots */}
-      <div className="flex gap-1.5 mb-6 flex-wrap justify-center">
-        {exercises.map((_, i) => (
-          <div key={i} className={`h-2 w-2 rounded-full transition-all duration-300 ${
-            i < exIdx ? 'bg-berry-deep' : i === exIdx ? 'bg-berry-mid scale-125' : 'bg-berry-light'
-          }`} />
-        ))}
+      {/* Step dots — tap any to jump back/forward and review */}
+      <div className="flex gap-1.5 mb-5 flex-wrap justify-center max-w-lg">
+        {exercises.map((_, i) => {
+          const done = picks[i] !== undefined && picks[i] !== null
+          return (
+            <button key={i} onClick={() => goTo(i)} aria-label={`Savol ${i + 1}`}
+              className={`h-2.5 rounded-full transition-all duration-200 ${
+                i === exIdx ? 'bg-berry-mid w-6' : done ? 'bg-berry-deep w-2.5' : 'bg-berry-light w-2.5'
+              }`} />
+          )
+        })}
       </div>
 
       <div className={`w-full max-w-lg ${shaking ? '[animation:shake_0.4s_ease-in-out]' : ''}`}>
         <p className="text-xs font-bold text-gray-400 uppercase tracking-wide text-center mb-3">
-          {isFill ? "Bo'sh joyni to'ldiring" : 'Tarjimani toping'}
+          {isFill ? "Bo'sh joyni to'ldiring" : 'Tarjimani toping'} · {exIdx + 1}/{total}
         </p>
 
         <div className="bg-white rounded-2xl shadow-sm px-6 py-5 mb-4 text-center">
@@ -376,7 +368,7 @@ function ExercisesBlock({ exercises, subject = 'english', onComplete, onExercise
               if (i === ex.correct) {
                 cls = 'bg-green-50 border-2 border-green-500 text-green-800'
                 icon = <span className="ml-auto font-black text-green-600 shrink-0">✓</span>
-              } else if (i === selected) {
+              } else if (i === pick) {
                 cls = 'bg-red-50 border-2 border-red-400 text-red-700'
                 icon = <span className="ml-auto font-black text-red-500 shrink-0">✗</span>
               } else {
@@ -408,28 +400,32 @@ function ExercisesBlock({ exercises, subject = 'english', onComplete, onExercise
         )}
 
         {answered && (
-          <div className="mt-4 text-center" style={{ animation: 'fadeInUp 0.3s ease-out' }}>
-            <p className={`font-black text-lg mb-3 ${isCorrect ? 'text-green-600' : 'text-red-500'}`}>
-              {isCorrect ? "To'g'ri! ✅ +10 🫐" : 'Xato! ❌'}
-            </p>
-            <button
-              onClick={next}
-              className="bg-berry-deep text-white font-black px-10 py-3 rounded-full shadow-lg hover:bg-berry-dark hover:scale-[1.02] transition-all"
-            >
-              {exIdx < total - 1 ? 'Keyingisi →' : "Natijani ko'rish →"}
-            </button>
-          </div>
+          <p className={`text-center font-black text-lg mt-4 ${isCorrect ? 'text-green-600' : 'text-red-500'}`}>
+            {isCorrect ? "To'g'ri! ✅ +10 🫐" : 'Xato! ❌'}
+          </p>
         )}
 
+        {/* Navigation: previous / next-or-skip / finish */}
+        <div className="mt-5 flex items-center justify-between gap-3">
+          <button
+            onClick={() => goTo(exIdx - 1)}
+            disabled={exIdx === 0}
+            className="px-4 py-2.5 rounded-full font-bold text-sm border-2 border-berry-light text-berry-mid hover:bg-berry-glow transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            ← Oldingi
+          </button>
+
+          <button
+            onClick={primary}
+            className="flex-1 bg-berry-deep text-white font-black py-3 rounded-full shadow-lg hover:bg-berry-dark hover:scale-[1.02] transition-all"
+          >
+            {isLast ? "Natijani ko'rish →" : answered ? 'Keyingisi →' : "O'tkazib yuborish →"}
+          </button>
+        </div>
         {!answered && (
-          <div className="mt-5 text-center">
-            <button
-              onClick={skip}
-              className="text-sm font-semibold text-gray-400 hover:text-berry-mid transition-colors"
-            >
-              O'tkazib yuborish → (keyingi darsda qaytamiz)
-            </button>
-          </div>
+          <p className="text-center text-xs text-gray-400 mt-2">
+            Tushunmadingizmi? O'tkazib yuboring — keyingi darsda qaytamiz
+          </p>
         )}
       </div>
     </div>
@@ -983,6 +979,7 @@ export default function Lesson() {
               plan,
               subject,
               profile: data,
+              uiLanguage: lang,
             }),
           }, 30000)
 
