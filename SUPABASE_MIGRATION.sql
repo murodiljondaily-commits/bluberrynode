@@ -66,6 +66,23 @@ ALTER TABLE vocabulary_bank
   ADD COLUMN IF NOT EXISTS skipped_count INTEGER DEFAULT 0,
   ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'learning';
 
+-- 4b) Video watch sessions (drives the escalating Telegram "come back" reminders)
+CREATE TABLE IF NOT EXISTS video_sessions (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id),
+  telegram_id TEXT,
+  ui_lang TEXT DEFAULT 'uz',
+  topic TEXT,
+  kind TEXT DEFAULT 'lesson',
+  duration_sec INTEGER DEFAULT 360,
+  started_at TIMESTAMPTZ DEFAULT NOW(),
+  stage INTEGER DEFAULT 0,
+  status TEXT DEFAULT 'watching',   -- watching | done | expired
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE video_sessions ENABLE ROW LEVEL SECURITY;
+-- Server (service role) manages these; no public policies needed.
+
 -- 5) Word mastery trigger
 CREATE OR REPLACE FUNCTION update_word_mastery()
 RETURNS TRIGGER AS $$

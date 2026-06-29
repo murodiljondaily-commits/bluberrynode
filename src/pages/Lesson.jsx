@@ -244,34 +244,41 @@ function GrammarBlock({ grammar, subject = 'english', onComplete }) {
   )
 }
 
-// ─── BLOCK 3 — Media: a topic video, then a topic podcast (both YouTube redirects) ──
-function MediaBlock({ video, topic, subject, level, onComplete }) {
-  const [step, setStep] = useState('video') // video → podcast → done
+// ─── BLOCK 3 — Media: topic video → podcast → cartoon (all YouTube redirects) ──
+function MediaBlock({ video, topic, subject, level, session, onComplete }) {
+  const [step, setStep] = useState('video') // video → podcast → cartoon → done
   const [earned, setEarned] = useState(0)
+  const add = (xp) => setEarned((e) => e + (xp || 0))
 
   if (step === 'video') {
     return (
       <VideoLesson
-        videoId={video?.video_id}
-        topic={topic}
-        subject={subject}
-        level={level}
-        kind="lesson"
+        videoId={video?.video_id} topic={topic} subject={subject} level={level} kind="lesson"
+        session={session}
         preWatchText={`"${topic}" mavzusiga oid videoni tomosha qiling`}
         questions={video?.video_questions || []}
-        onComplete={(xp) => { setEarned(xp || 0); setStep('podcast') }}
+        onComplete={(xp) => { add(xp); setStep('podcast') }}
+      />
+    )
+  }
+  if (step === 'podcast') {
+    return (
+      <VideoLesson
+        topic={topic} subject={subject} level={level} kind="podcast"
+        session={session}
+        preWatchText={`"${topic}" mavzusida podkastni tinglang`}
+        questions={[]}
+        onComplete={(xp) => { add(xp); setStep('cartoon') }}
       />
     )
   }
   return (
     <VideoLesson
-      topic={topic}
-      subject={subject}
-      level={level}
-      kind="podcast"
-      preWatchText={`"${topic}" mavzusida podkastni tinglang`}
+      topic={topic} subject={subject} level={level} kind="cartoon"
+      session={session}
+      preWatchText={`"${topic}" mavzusidagi multfilmni tomosha qiling`}
       questions={[]}
-      onComplete={(xp) => onComplete((earned || 0) + (xp || 0))}
+      onComplete={(xp) => onComplete(earned + (xp || 0))}
     />
   )
 }
@@ -1172,6 +1179,7 @@ export default function Lesson() {
             topic={lessonPlan?.topic}
             subject={subject}
             level={lessonPlan?.level || routeLevel || curriculumNode?.level || ''}
+            session={{ userId, telegramId: profile?.telegram_id, uiLang: lang }}
             onComplete={xp => { addXP(xp); setBlock(4) }}
           />
         )}

@@ -1,0 +1,22 @@
+# Pings the video-session "process" action so the bot can send escalating
+# "come back to your lesson" reminders. Vercel Hobby crons can't run frequently,
+# so GitHub Actions does the pinging (every 5 minutes — its minimum cadence).
+#
+# Optional: set repo secret CRON_SECRET (and the matching Vercel env var) to lock
+# the endpoint. If unset, the endpoint is open (it only sends already-due reminders).
+name: video-reminders
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger reminder processing
+        run: |
+          curl -s -X POST "https://blueberry-node.vercel.app/api/video-session" \
+            -H "Content-Type: application/json" \
+            -d "{\"action\":\"process\",\"secret\":\"${{ secrets.CRON_SECRET }}\"}" \
+            -w "\nHTTP %{http_code}\n"

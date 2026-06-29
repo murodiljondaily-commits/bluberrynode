@@ -1,5 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { playCorrect, playWrong } from '../lib/soundEffects'
+import { speak } from '../lib/voiceSystem'
+
+const langForSubject = (s) => (s === 'russian' ? 'russian' : s === 'math' ? 'uzbek' : 'english')
 
 const FALLBACK_SENTENCES = {
   english: [
@@ -180,6 +183,21 @@ export default function SpeakingLesson({ subject = 'english', sentences: propSen
         <p className="text-sm text-gray-400 mb-2">Gap {index + 1}/{list.length} 🎤</p>
         <p className="text-sm text-berry-mid font-semibold mb-3">Quyidagi gapni aytib ko'ring:</p>
         <p className="text-2xl font-black text-berry-deep bg-berry-glow rounded-2xl px-6 py-4">{current}</p>
+        {/* Pronunciation aids: hear the target at normal + slow speed before recording */}
+        <div className="flex items-center justify-center gap-3 mt-3">
+          <button
+            onClick={() => speak(current, langForSubject(subject), 1.0).catch(() => {})}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-white border border-berry-light text-berry-deep font-bold text-sm shadow-sm hover:bg-berry-glow transition-all"
+          >
+            🔊 Tinglash
+          </button>
+          <button
+            onClick={() => speak(current, langForSubject(subject), 0.6).catch(() => {})}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-white border border-berry-light text-berry-mid font-bold text-sm shadow-sm hover:bg-berry-glow transition-all"
+          >
+            🐢 Sekin
+          </button>
+        </div>
       </div>
 
       {/* Error message (inline, not blocking alert) */}

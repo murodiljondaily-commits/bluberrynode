@@ -23,13 +23,15 @@ const L = {
 }
 const fmt = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 
-export default function VideoLesson({ videoId, topic, subject = 'english', level = '', kind = 'lesson', preWatchText, questions = [], onComplete }) {
+export default function VideoLesson({ videoId, topic, subject = 'english', level = '', kind = 'lesson', session, preWatchText, questions = [], onComplete }) {
   const { lang } = useLang()
   const isPodcast = kind === 'podcast'
+  const isCartoon = kind === 'cartoon'
+  const sessionIdRef = useRef(null)
   const t = (k) => {
-    // Podcast-specific overrides for a couple of labels.
     if (isPodcast && k === 'watchBtn') return lang === 'ru' ? 'Слушать на YouTube 🎧' : "YouTube'da tinglash 🎧"
     if (isPodcast && k === 'iWatched') return lang === 'ru' ? 'Прослушал! Продолжить ✓' : "Tingladim! Davom etish ✓"
+    if (isCartoon && k === 'watchBtn') return lang === 'ru' ? 'Смотреть мультфильм 🎬' : "Multfilmni ko'rish 🎬"
     return L[k][lang] || L[k].uz
   }
 
@@ -82,9 +84,32 @@ export default function VideoLesson({ videoId, topic, subject = 'english', level
     window.open(url, '_blank', 'noopener')
     setSecondsLeft((video?.durationSec || 360) + 300) // video length + 5 min
     setPhase('watching')
+    // Register a server-side session so the bot can "call back" if the student
+    // never returns (escalating Telegram reminders). Best-effort, non-blocking.
+    if (session?.userId && session?.telegramId) {
+      fetch('/api/video-session', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'start', userId: session.userId, telegramId: session.telegramId,
+          uiLang: session.uiLang || 'uz', topic, kind, durationSec: video?.durationSec || 360,
+        }),
+      }).then(r => r.json()).then(d => { sessionIdRef.current = d?.id || null }).catch(() => {})
+    }
+  }
+
+  // Tell the server the student came back so reminders stop.
+  function clearSession() {
+    if (sessionIdRef.current) {
+      fetch('/api/video-session', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'complete', sessionId: sessionIdRef.current }),
+      }).catch(() => {})
+      sessionIdRef.current = null
+    }
   }
 
   function done() {
+    clearSession()
     if (questions.length > 0) setPhase('questions')
     else onComplete?.(10)
   }
