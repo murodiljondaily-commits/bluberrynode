@@ -231,6 +231,11 @@ CRITICAL RULES:
 
     const header = `${sys}
 
+🌐 LANGUAGE OF INSTRUCTION = ${explainLang}. EVERY translation, explanation, grammar note,
+tip, and all *_uz fields MUST be written in ${explainLang}. (The target-language words and
+example sentences stay in the target language; everything that EXPLAINS is ${explainLang}.)
+For example, a vocabulary translation must be ${explainLang}, NOT any other language.
+
 ⚠️ THIS LESSON IS STRICTLY ABOUT THE TOPIC: "${topic}".
 EVERY item you produce MUST be about "${topic}". Do NOT default to greetings, introductions,
 or any unrelated theme unless the topic itself is greetings.
