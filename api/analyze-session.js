@@ -30,24 +30,31 @@ Write 2-3 specific actionable sentences in English about:
 
 Be specific and brief. Reference actual words from the session.`
 
-    const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
+    // Claude Haiku primary (replaces Gemini)
+    try {
+      const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'x-api-key': process.env.ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+        },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: geminiPrompt }] }],
-          generationConfig: { temperature: 0.4, maxOutputTokens: 300 },
+          model: 'claude-haiku-4-5',
+          max_tokens: 300,
+          temperature: 0.4,
+          messages: [{ role: 'user', content: geminiPrompt }],
         }),
+        signal: AbortSignal.timeout(15000),
+      })
+      const claudeData = await claudeRes.json()
+      if (claudeRes.ok && claudeData.content?.[0]?.text) {
+        console.log('✅ Claude session analysis done')
+        return res.json({ notes: topicTag + claudeData.content[0].text.trim() })
       }
-    )
-
-    const geminiData = await geminiResponse.json()
-
-    if (geminiData.candidates?.[0]) {
-      const notes = geminiData.candidates[0].content.parts[0].text.trim()
-      console.log('✅ Gemini session analysis done')
-      return res.json({ notes: topicTag + notes })
+      console.error('Claude analyze error', claudeRes.status, JSON.stringify(claudeData).slice(0, 140))
+    } catch (e) {
+      console.error('Claude analyze exception', e.message)
     }
 
     // Fallback to OpenAI

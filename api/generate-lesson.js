@@ -126,6 +126,37 @@ async function callOpenAI(system, prompt) {
   }
 }
 
+// Generate lesson JSON via Claude Haiku (fast primary, no Gemini quota issues).
+async function callClaude(system, prompt) {
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5',
+        max_tokens: 4096,
+        temperature: 0.7,
+        system,
+        messages: [{ role: 'user', content: prompt + '\n\nReturn ONLY the JSON object, no prose, no markdown fences.' }],
+      }),
+      signal: AbortSignal.timeout(28000),
+    })
+    const d = await r.json()
+    if (!r.ok || !d.content?.[0]?.text) {
+      console.error('Claude gen error', r.status, JSON.stringify(d).slice(0, 160))
+      return null
+    }
+    return parseJson(d.content[0].text)
+  } catch (e) {
+    console.error('Claude gen exception', e.message)
+    return null
+  }
+}
+
 // Generate lesson JSON via Gemini (fast/cheap primary for ru/math when quota allows).
 async function callGemini(prompt) {
   try {
@@ -250,21 +281,11 @@ Generate COMPLETE lesson content. Return ONLY valid JSON, no markdown.
 }`
 
     const sys = systemInstructions[subject] || systemInstructions.english
-    let lessonContent = null
-
-    if (subject === 'english') {
-      // English: OpenAI is primary (best quality), Gemini is the cheap fallback.
+    // Claude Haiku is the fast primary for ALL subjects; OpenAI is the fallback.
+    let lessonContent = await callClaude(sys, contentPrompt)
+    if (!lessonContent) {
+      console.log('↩️ Claude unavailable — OpenAI fallback for', subject)
       lessonContent = await callOpenAI(sys, contentPrompt)
-      if (!lessonContent) lessonContent = await callGemini(contentPrompt)
-    } else {
-      // Russian/Math: Gemini is cheap/fast primary, but if it's unavailable
-      // (e.g. quota 429) fall back to OpenAI so we still serve REAL adaptive
-      // content for the requested topic instead of generic static fallback.
-      lessonContent = await callGemini(contentPrompt)
-      if (!lessonContent) {
-        console.log('↩️ Gemini unavailable — OpenAI fallback for', subject)
-        lessonContent = await callOpenAI(sys, contentPrompt)
-      }
     }
 
     const fromAI = !!lessonContent

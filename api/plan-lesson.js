@@ -37,7 +37,39 @@ function decideLevel(currentLevel, sessions) {
   return { level: currentLevel, changed: false, reason: `Holding at ${currentLevel} (recent avg ${Math.round(avg)}%)` }
 }
 
-// OpenAI fallback for the planning brain when Gemini is unavailable (e.g. quota 429).
+function stripJson(t) {
+  return JSON.parse(t.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim())
+}
+
+// Claude Haiku is the fast primary planning brain (replaces Gemini).
+async function planWithClaude(prompt) {
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5',
+        max_tokens: 1200,
+        temperature: 0.6,
+        system: 'You are an expert adaptive tutor. Return ONLY valid JSON for the lesson plan requested, no prose or markdown fences.',
+        messages: [{ role: 'user', content: prompt }],
+      }),
+      signal: AbortSignal.timeout(20000),
+    })
+    const d = await r.json()
+    if (!r.ok || !d.content?.[0]?.text) { console.error('Claude plan error', r.status, JSON.stringify(d).slice(0, 150)); return null }
+    return stripJson(d.content[0].text)
+  } catch (e) {
+    console.error('Claude plan exception', e.message)
+    return null
+  }
+}
+
+// OpenAI fallback for the planning brain when Claude is unavailable.
 async function planWithOpenAI(prompt) {
   try {
     const r = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -206,21 +238,6 @@ Return ONLY valid JSON, no markdown:
   "contentInstructions": "Detailed instructions for content generator about what to create and how"
 }`
 
-    const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: geminiPrompt }] }],
-          generationConfig: { temperature: 0.7, maxOutputTokens: 1000 },
-        }),
-      }
-    )
-
-    const geminiData = await geminiResponse.json()
-    console.log('Gemini plan status:', geminiResponse.status)
-
     const fallbackPlan = {
       topic: currentTopic,
       topicUzbek: currentTopic,
@@ -243,22 +260,12 @@ Return ONLY valid JSON, no markdown:
       contentInstructions: `Generate ${subject} lesson about ${currentTopic} at ${level} level in Uzbek explanations.`,
     }
 
-    // Parse Gemini → else OpenAI fallback → else static plan.
-    let plan = null
-    if (geminiData.candidates?.[0]) {
-      try {
-        plan = JSON.parse(geminiData.candidates[0].content.parts[0].text
-          .replace(/```json\n?/g, '').replace(/```\n?/g, '').trim())
-      } catch (e) { console.error('Gemini plan parse error:', e.message) }
-    } else {
-      console.error('Gemini plan failed:', JSON.stringify(geminiData).slice(0, 160))
-    }
-
+    // Claude Haiku primary → OpenAI fallback → static plan.
+    let plan = await planWithClaude(geminiPrompt)
     if (!plan) {
-      console.log('↩️ Gemini plan unavailable — OpenAI fallback')
+      console.log('↩️ Claude plan unavailable — OpenAI fallback')
       plan = await planWithOpenAI(geminiPrompt)
     }
-
     if (!plan) return res.json(fallbackPlan)
 
     // Force the adaptive fields + chosen topic so the content cache key is stable
