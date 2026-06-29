@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
+import { useLang } from '../context/LanguageContext'
 
 const MAX_TURNS = 8
 
 export default function RealtimeConversation({ topic, subject, level, studentName, onComplete }) {
+  const { lang } = useLang()
+  const explainLang = lang === 'ru' ? 'Russian' : 'Uzbek'
   const [status, setStatus] = useState('idle')
   // idle | connecting | connected | speaking | listening | error
   const [transcript, setTranscript] = useState([])
@@ -45,12 +48,15 @@ Student level: ${level}
 
 CRITICAL RULES:
 - Keep responses SHORT (2-3 sentences max) so student can follow
-- Speak in ${targetLang} — this is what the student is learning
-- If student makes a grammar mistake: correct it GENTLY in one word, then continue
+- Speak mainly in ${targetLang} — this is what the student is learning
+- WHEN THE STUDENT MAKES A MISTAKE: briefly switch to ${explainLang} (the student's
+  native language) to explain WHAT was wrong and the correct form, then switch back to
+  ${targetLang}. Example: say the correct version, then one short ${explainLang} sentence
+  explaining why. Keep corrections kind and short.
 - Ask ONE follow-up question per turn to keep conversation going
 - Be warm and encouraging like a kind teacher
 - Pace your speech for a ${level} level student
-- After ${MAX_TURNS} exchanges: give a brief 2-sentence summary of what was discussed`
+- After ${MAX_TURNS} exchanges: give a brief 2-sentence summary in ${explainLang} of what was discussed and what to practice`
 
   async function startSession() {
     if (!isMounted.current) return
