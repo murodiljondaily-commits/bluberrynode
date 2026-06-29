@@ -1,10 +1,47 @@
 import { createClient } from '@supabase/supabase-js'
 
+// CEFR ladder used for adaptive progression. Legacy values are normalized in.
+const LADDER = ['A0', 'A1', 'A2', 'B1', 'B2', 'C1']
+const LEGACY_LEVEL = {
+  beginner: 'A0', elementary: 'A1', a0: 'A0', a1: 'A1', a2: 'A2',
+  intermediate: 'B1', b1: 'B1', b2: 'B2', advanced: 'C1', c1: 'C1', mastery: 'C1',
+}
+function normLevel(v) {
+  if (!v) return 'A0'
+  const s = String(v).trim()
+  if (LADDER.includes(s)) return s
+  return LEGACY_LEVEL[s.toLowerCase()] || 'A0'
+}
+function levelToDifficulty(level) {
+  const i = LADDER.indexOf(level)
+  if (i <= 1) return 'easy'        // A0, A1
+  if (i <= 3) return 'medium'      // A2, B1
+  return 'hard'                    // B2, C1
+}
+
+// The adaptive brain: look at the most recent sessions and decide whether the
+// student should move up a level, stay, or drop back — "a 20-year tutor reading the room".
+function decideLevel(currentLevel, sessions) {
+  const idx = LADDER.indexOf(currentLevel)
+  const recent = (sessions || []).slice(0, 3).map(s => s.accuracy_percent ?? 0)
+  if (recent.length < 2) return { level: currentLevel, changed: false, reason: 'Not enough history yet' }
+  const avg = recent.reduce((a, b) => a + b, 0) / recent.length
+  const allStrong = recent.length >= 3 && recent.every(a => a >= 80)
+  // Promote: 3 recent sessions all >= 80%. Demote: recent avg < 35%.
+  if (allStrong && idx < LADDER.length - 1) {
+    return { level: LADDER[idx + 1], changed: true, reason: `3 strong sessions (avg ${Math.round(avg)}%) — leveled up` }
+  }
+  if (avg < 35 && idx > 0) {
+    return { level: LADDER[idx - 1], changed: true, reason: `Struggling (avg ${Math.round(avg)}%) — stepped back to consolidate` }
+  }
+  return { level: currentLevel, changed: false, reason: `Holding at ${currentLevel} (recent avg ${Math.round(avg)}%)` }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   try {
-    const { userId, subject = 'english', lessonNumber = 1, profile } = req.body
+    const { userId, subject = 'english', lessonNumber = 1, profile, topic: requestedTopic, level: requestedLevel } = req.body
     const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY)
 
     // Fetch per-subject progress + sessions + weak words in parallel
@@ -55,11 +92,35 @@ export default async function handler(req, res) {
       math: `Teaching MATH to Uzbek speaker. ALL content in UZBEK language. Use Uzbek names: Ali, Malika, Kamol. Use so'm currency. Use km, kg, litr. Use Tashkent, Samarqand in examples.`,
     }
 
-    const level = progress?.current_level || profile?.current_level?.[subject] || 'beginner'
+    // ── Adaptive level decision (the analytics "tutor brain") ──────────
+    const baseLevel = normLevel(progress?.current_level || profile?.current_level?.[subject] || requestedLevel)
+    const decision = decideLevel(baseLevel, sessions)
+    const level = decision.level
+    const difficulty = levelToDifficulty(level)
+
+    // Persist a level change back to both stores (best-effort, non-blocking on failure).
+    if (decision.changed) {
+      const mergedLevels = { ...(profile?.current_level || {}), [subject]: level }
+      await Promise.allSettled([
+        supabase.from('profiles').update({ current_level: mergedLevels }).eq('id', userId),
+        supabase.from('student_progress').upsert(
+          { user_id: userId, subject, current_level: level },
+          { onConflict: 'user_id,subject' }
+        ),
+      ])
+      console.log(`📈 Level ${baseLevel} → ${level} for ${subject}: ${decision.reason}`)
+    }
+
     const lessonNum = progress?.current_lesson || lessonNumber || 1
-    const curriculum = curriculumMap[subject]?.[level] || curriculumMap.english.beginner
+    // Map CEFR level to the internal curriculum bucket (only used when the frontend
+    // didn't pass a specific topic).
+    const bucket = ['A0', 'A1'].includes(level) ? 'beginner'
+      : ['A2'].includes(level) ? 'elementary'
+      : ['B1', 'B2'].includes(level) ? 'intermediate' : 'advanced'
+    const curriculum = curriculumMap[subject]?.[bucket] || curriculumMap.english.beginner
     const topicIndex = (lessonNum - 1) % curriculum.length
-    const currentTopic = curriculum[topicIndex]
+    // Prefer the topic the frontend (curriculum.js spider-web) selected.
+    const currentTopic = requestedTopic || curriculum[topicIndex]
     const nextTopic = curriculum[(topicIndex + 1) % curriculum.length]
 
     const geminiPrompt = `You are an expert educational AI creating a personalized lesson plan.
@@ -137,7 +198,10 @@ Return ONLY valid JSON, no markdown:
       topic: currentTopic,
       topicUzbek: currentTopic,
       level,
-      difficulty: 'medium',
+      levelChanged: decision.changed,
+      previousLevel: baseLevel,
+      levelReason: decision.reason,
+      difficulty,
       method: 'mixed',
       focusWords: [],
       reviewWords: weakWords?.map(w => w.word).slice(0, 5) || [],
@@ -162,7 +226,15 @@ Return ONLY valid JSON, no markdown:
 
     try {
       const plan = JSON.parse(planText)
-      console.log('✅ Gemini plan:', plan.topic, '|', plan.method, '|', plan.difficulty)
+      // Force the adaptive fields + chosen topic so the content cache key is stable
+      // and the level the brain decided is authoritative (not whatever Gemini echoed).
+      plan.topic = currentTopic
+      plan.level = level
+      plan.difficulty = difficulty
+      plan.levelChanged = decision.changed
+      plan.previousLevel = baseLevel
+      plan.levelReason = decision.reason
+      console.log('✅ Gemini plan:', plan.topic, '|', plan.method, '|', level, '|', difficulty)
       res.json(plan)
     } catch (e) {
       console.error('Parse error:', e.message)

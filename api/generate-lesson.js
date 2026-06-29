@@ -1,3 +1,43 @@
+import { createClient } from '@supabase/supabase-js'
+
+// Bump this to invalidate all cached lessons after a prompt/schema change.
+const CACHE_VERSION = 'v1'
+
+function supabaseAdmin() {
+  try {
+    return createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY)
+  } catch {
+    return null
+  }
+}
+
+// Lesson content for a given (subject, topic, level, difficulty) is reusable across
+// all students — only the PLAN (which topic/level a student gets) is personalized.
+// Caching it turns a ~30s cold generation into a <0.5s lookup for everyone after the first.
+async function readCache(db, cacheKey) {
+  if (!db) return null
+  try {
+    const { data } = await db.from('lesson_cache').select('content').eq('cache_key', cacheKey).single()
+    return data?.content || null
+  } catch {
+    return null
+  }
+}
+
+async function writeCache(db, cacheKey, parts, content) {
+  if (!db) return
+  try {
+    await db.from('lesson_cache').upsert({
+      cache_key: cacheKey,
+      subject: parts.subject,
+      topic: parts.topic,
+      level: parts.level,
+      difficulty: parts.difficulty,
+      content,
+    }, { onConflict: 'cache_key' })
+  } catch { /* table may not exist yet — non-fatal */ }
+}
+
 // Video database (verified embeddable IDs)
 const VIDEO_DB = {
   english: {
@@ -64,7 +104,27 @@ export default async function handler(req, res) {
 
   try {
     const { plan, subject = 'english', profile } = req.body
-    console.log('Generate lesson:', subject, plan?.topic, plan?.level)
+    const topic = plan?.topic || 'Lesson'
+    const level = plan?.level || 'A1'
+    const difficulty = plan?.difficulty || 'medium'
+    console.log('Generate lesson:', subject, topic, level, difficulty)
+
+    // ── Cache lookup ──────────────────────────────────────────────
+    const db = supabaseAdmin()
+    const cacheKey = `${CACHE_VERSION}::${subject}::${topic}::${level}::${difficulty}`
+    const cached = await readCache(db, cacheKey)
+    if (cached) {
+      console.log('⚡ Cache HIT:', cacheKey)
+      // Always re-attach a fresh, verified video id (cheap, avoids caching stale ids)
+      cached.youtube_video = {
+        video_id: lookupVideo(topic, subject),
+        title: topic,
+        summary_uz: `Bu video "${topic}" mavzusida qo'shimcha ma'lumot beradi`,
+        video_questions: [],
+      }
+      return res.json({ ...cached, _cached: true })
+    }
+    console.log('🔄 Cache MISS — generating:', cacheKey)
 
     const systemInstructions = {
       english: `You are generating English lesson content for an Uzbek speaker.
@@ -115,7 +175,7 @@ Instructions: ${plan?.contentInstructions}
 Generate COMPLETE lesson content. Return ONLY valid JSON, no markdown.
 
 {
-  "vocabulary": [10 items with: word, translation, pronunciation, example, example_uz, audio_text],
+  "vocabulary": [8 items with: word, translation, pronunciation, example, example_uz, audio_text],
   "grammar_explanation": {
     "title": "Grammar topic in Uzbek",
     "explanation": "3-4 sentence explanation in Uzbek",
@@ -124,8 +184,8 @@ Generate COMPLETE lesson content. Return ONLY valid JSON, no markdown.
     "common_mistake": "Most common mistake in Uzbek",
     "tip": "Memory tip in Uzbek"
   },
-  "exercises": [EXACTLY 20 items with: type (fillBlank or translate), question, options (4 items), correct (0-3 — DISTRIBUTE EVENLY: 5 correct=0, 5 correct=1, 5 correct=2, 5 correct=3), explanation_uz, word],
-  "speaking_sentences": [EXACTLY 8 items with: text, uzbek, pronunciation_tip, audio_intro],
+  "exercises": [EXACTLY 12 items with: type (fillBlank or translate), question, options (4 items), correct (0-3 — VARY the correct index across items, do not always use the same position), explanation_uz, word],
+  "speaking_sentences": [EXACTLY 6 items with: text, uzbek, pronunciation_tip, audio_intro],
   "story": {
     "title": "Story title",
     "title_uz": "Story title in Uzbek",
@@ -143,13 +203,15 @@ Generate COMPLETE lesson content. Return ONLY valid JSON, no markdown.
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
         body: JSON.stringify({
           model: 'gpt-4o-mini',
-          max_tokens: 3500,
+          max_tokens: 2600,
           temperature: 0.7,
+          response_format: { type: 'json_object' },
           messages: [
             { role: 'system', content: systemInstructions.english },
             { role: 'user', content: contentPrompt },
           ],
         }),
+        signal: AbortSignal.timeout(28000),
       })
       const gptData = await gptResponse.json()
       console.log('GPT status:', gptResponse.status, 'tokens:', gptData.usage?.total_tokens)
@@ -169,8 +231,9 @@ Generate COMPLETE lesson content. Return ONLY valid JSON, no markdown.
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: contentPrompt }] }],
-            generationConfig: { temperature: 0.7, maxOutputTokens: 3500 },
+            generationConfig: { temperature: 0.7, maxOutputTokens: 2600, responseMimeType: 'application/json' },
           }),
+          signal: AbortSignal.timeout(28000),
         }
       )
       const geminiData = await geminiResponse.json()
@@ -185,19 +248,23 @@ Generate COMPLETE lesson content. Return ONLY valid JSON, no markdown.
       }
     }
 
+    const fromAI = !!lessonContent
     if (!lessonContent) {
       console.log('⚠️ Using subject fallback for:', subject)
       lessonContent = getSubjectFallback(subject, plan)
     }
 
     // Attach video from hardcoded database (AI video IDs hallucinate)
-    const videoId = lookupVideo(plan?.topic || '', subject)
+    const videoId = lookupVideo(topic, subject)
     lessonContent.youtube_video = {
       video_id: videoId,
-      title: plan?.topic || 'Lesson Video',
-      summary_uz: `Bu video "${plan?.topic}" mavzusida qo'shimcha ma'lumot beradi`,
+      title: topic,
+      summary_uz: `Bu video "${topic}" mavzusida qo'shimcha ma'lumot beradi`,
       video_questions: [],
     }
+
+    // Cache only real AI output, so the static fallback never gets pinned in cache.
+    if (fromAI) await writeCache(db, cacheKey, { subject, topic, level, difficulty }, lessonContent)
 
     res.json(lessonContent)
   } catch (err) {

@@ -910,7 +910,7 @@ export default function Lesson() {
     const timeoutId = setTimeout(() => {
       console.log('⚠️ Load timeout — using fallback')
       finish(getFallbackContent(), getFallbackPlan())
-    }, 25000)
+    }, 32000)
 
     async function load() {
       try {
@@ -949,9 +949,11 @@ export default function Lesson() {
               userId: session.user.id,
               subject,
               lessonNumber: lessonNum,
+              topic: routeTopic || curriculumNode?.topic,
+              level: routeLevel || curriculumNode?.level,
               profile: data,
             }),
-          }, 8000)
+          }, 10000)
           if (planRes.ok) {
             const aiPlan = await planRes.json()
             if (aiPlan?.topic) plan = aiPlan
@@ -968,7 +970,7 @@ export default function Lesson() {
               subject,
               profile: data,
             }),
-          }, 9000)
+          }, 22000)
 
           if (genRes.ok) {
             const content = await genRes.json()
