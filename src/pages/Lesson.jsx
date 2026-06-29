@@ -910,7 +910,7 @@ export default function Lesson() {
     const timeoutId = setTimeout(() => {
       console.log('⚠️ Load timeout — using fallback')
       finish(getFallbackContent(), getFallbackPlan())
-    }, 38000)
+    }, 42000)
 
     async function load() {
       try {
@@ -970,7 +970,7 @@ export default function Lesson() {
               subject,
               profile: data,
             }),
-          }, 26000)
+          }, 30000)
 
           if (genRes.ok) {
             const content = await genRes.json()
