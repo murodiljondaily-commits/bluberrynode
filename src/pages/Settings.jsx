@@ -69,16 +69,21 @@ export default function Settings() {
     if (!userId) return
     setSaving(true)
     setSaveError('')
-    // Use ONLY columns that exist on profiles (parent_telegram_id, not parent_telegram).
+    // Core columns that definitely exist — this is the save that must succeed.
     const { error } = await supabase.from('profiles').update({
       full_name: fullName,
       daily_minutes: dailyMinutes,
       subjects,
-      telegram_id: telegramId || null,
       parent_email: parentEmail || null,
       parent_telegram_id: parentTelegram || null,
       preferred_language: lang,
     }).eq('id', userId)
+
+    // telegram_id may not exist until the migration is re-run — save it best-effort
+    // so the core save never fails because of a missing column.
+    await supabase.from('profiles')
+      .update({ telegram_id: telegramId || null }).eq('id', userId)
+      .then(() => {}, () => {})
 
     setSaving(false)
     if (error) {
