@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { supabase } from './lib/supabaseClient'
 import { ThemeProvider } from './context/ThemeContext'
@@ -20,6 +20,13 @@ function ProtectedRoute({ session, children }) {
   if (session === undefined) return null
   if (!session) return <Navigate to="/login" replace />
   return children
+}
+
+// Remount Lesson when the subject/lesson changes so "Keyingi dars" fully reloads
+// (otherwise the load-once lock keeps the previous lesson's content).
+function LessonRoute() {
+  const { subject, week } = useParams()
+  return <Lesson key={`${subject}-${week}`} />
 }
 
 export default function App() {
@@ -57,7 +64,7 @@ export default function App() {
           path="/lesson/:subject/:week"
           element={
             <ProtectedRoute session={session}>
-              <Lesson />
+              <LessonRoute />
             </ProtectedRoute>
           }
         />

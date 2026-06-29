@@ -78,9 +78,9 @@ export default async function handler(req, res) {
     }
 
     const ids = sData.items.map(i => i.id?.videoId).filter(Boolean)
-    // Fetch durations + status to pick a sensible-length, public video.
+    // Fetch durations + status + stats to pick a sensible-length, popular, public video.
     const vRes = await fetch(
-      `https://www.googleapis.com/youtube/v3/videos?part=contentDetails,snippet,status&id=${ids.join(',')}&key=${key}`,
+      `https://www.googleapis.com/youtube/v3/videos?part=contentDetails,snippet,status,statistics&id=${ids.join(',')}&key=${key}`,
       { signal: AbortSignal.timeout(10000) }
     )
     const vData = await vRes.json()
@@ -89,13 +89,17 @@ export default async function handler(req, res) {
       title: v.snippet?.title,
       channel: v.snippet?.channelTitle,
       durationSec: parseDuration(v.contentDetails?.duration),
-      public: v.status?.privacyStatus === 'public',
+      views: parseInt(v.statistics?.viewCount || '0', 10),
+      public: v.status?.privacyStatus === 'public' && v.status?.embeddable !== false,
     })).filter(v => v.public && v.durationSec >= minDur && v.durationSec <= maxDur)
 
     if (!vids.length) return res.json({ ...fbResult, source: 'fallback-nomatch' })
 
-    // Prefer a trusted channel, else first relevant result.
-    const pick = vids.find(v => PREFERRED.some(p => (v.channel || '').toLowerCase().includes(p.toLowerCase()))) || vids[0]
+    // Quality signal: prefer a trusted channel; otherwise the most-watched candidate
+    // (high view counts correlate with clearer, better-produced lessons).
+    const trusted = vids.filter(v => PREFERRED.some(p => (v.channel || '').toLowerCase().includes(p.toLowerCase())))
+    const pool = trusted.length ? trusted : vids
+    const pick = pool.reduce((best, v) => (v.views > (best?.views || 0) ? v : best), pool[0])
     return res.json({
       videoId: pick.videoId,
       title: pick.title,

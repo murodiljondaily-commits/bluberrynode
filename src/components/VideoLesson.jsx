@@ -191,7 +191,10 @@ export default function VideoLesson({ videoId, topic, subject = 'english', level
           <p className="text-sm font-semibold text-berry-mid">{t('loading')}</p>
         </div>
       ) : (
-        <div className="rounded-2xl overflow-hidden shadow-xl bg-white">
+        <div
+          onClick={phase === 'intro' ? startWatching : undefined}
+          className={`rounded-2xl overflow-hidden shadow-xl bg-white ${phase === 'intro' ? 'cursor-pointer hover:shadow-2xl transition-shadow' : ''}`}
+        >
           <div className="relative">
             <img src={thumb} alt={video.title} className="w-full aspect-video object-cover" />
             <div className="absolute inset-0 flex items-center justify-center bg-black/30">

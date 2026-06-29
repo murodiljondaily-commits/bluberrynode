@@ -1035,7 +1035,7 @@ export default function Lesson() {
     }
   }
 
-  const TOTAL_BLOCKS = 8
+  const TOTAL_BLOCKS = 10
   const progressPct  = (block / TOTAL_BLOCKS) * 100
 
   const vocab     = lessonContent?.vocabulary || []
@@ -1043,6 +1043,8 @@ export default function Lesson() {
   const exercises = lessonContent?.exercises || []
   const story     = lessonContent?.story
   const video     = lessonContent?.youtube_video
+  const mediaLevel = lessonPlan?.level || routeLevel || curriculumNode?.level || ''
+  const mediaSession = { userId, telegramId: profile?.telegram_id, uiLang: lang }
 
   // ── Loading ───────────────────────────────────────────────────────
   if (loading) {
@@ -1103,7 +1105,7 @@ export default function Lesson() {
       <SubtleOrbs />
 
       {/* SessionTimer (only during active blocks) */}
-      {block >= 1 && block < 8 && profile && (
+      {block >= 1 && block < 10 && profile && (
         <SessionTimer
           goalMinutes={profile.daily_minutes || 30}
           xpEarned={sessionXP}
@@ -1114,7 +1116,7 @@ export default function Lesson() {
       )}
 
       {/* Progress header (blocks 1-7) */}
-      {block >= 1 && block < 8 && (
+      {block >= 1 && block < 10 && (
         <div className="fixed top-0 left-0 right-0 z-20 bg-white/95 backdrop-blur-sm shadow-sm">
           <div className="flex items-center justify-between px-4 py-3 max-w-2xl mx-auto">
             <button
@@ -1146,7 +1148,7 @@ export default function Lesson() {
       )}
 
       {/* Content */}
-      <div className={`flex-1 flex flex-col relative z-[1] ${block >= 1 && block < 8 ? 'pt-[4.5rem]' : ''}`}>
+      <div className={`flex-1 flex flex-col relative z-[1] ${block >= 1 && block < 10 ? 'pt-[4.5rem]' : ''}`}>
 
         {block === 1 && (
           vocab.length > 0
@@ -1170,13 +1172,17 @@ export default function Lesson() {
               </div>
         )}
 
+        {/* Block 3 — grammar reinforcement VIDEO (right after the grammar explanation) */}
         {block === 3 && (
-          <MediaBlock
-            video={video}
+          <VideoLesson
+            videoId={video?.video_id}
             topic={lessonPlan?.topic}
             subject={subject}
-            level={lessonPlan?.level || routeLevel || curriculumNode?.level || ''}
-            session={{ userId, telegramId: profile?.telegram_id, uiLang: lang }}
+            level={mediaLevel}
+            kind="lesson"
+            session={mediaSession}
+            preWatchText={`"${lessonPlan?.topic}" grammatikasini mustahkamlash uchun videoni ko'ring`}
+            questions={video?.video_questions || []}
             onComplete={xp => { addXP(xp); setBlock(4) }}
           />
         )}
@@ -1213,7 +1219,35 @@ export default function Lesson() {
               </div>
         )}
 
+        {/* Block 6 — PODCAST (after the reading/listening story) */}
         {block === 6 && (
+          <VideoLesson
+            topic={lessonPlan?.topic}
+            subject={subject}
+            level={mediaLevel}
+            kind="podcast"
+            session={mediaSession}
+            preWatchText={`"${lessonPlan?.topic}" mavzusida podkastni tinglang — yangi so'zlarni eshiting`}
+            questions={[]}
+            onComplete={xp => { addXP(xp); setBlock(7) }}
+          />
+        )}
+
+        {/* Block 7 — CARTOON (right before speaking, to spark using the new words) */}
+        {block === 7 && (
+          <VideoLesson
+            topic={lessonPlan?.topic}
+            subject={subject}
+            level={mediaLevel}
+            kind="cartoon"
+            session={mediaSession}
+            preWatchText={`Gapirishdan oldin "${lessonPlan?.topic}" multfilmini tomosha qiling`}
+            questions={[]}
+            onComplete={xp => { addXP(xp); setBlock(8) }}
+          />
+        )}
+
+        {block === 8 && (
           <TutorSession
             level={profile?.current_level?.[subject] || 'elementary'}
             subject={subject}
@@ -1221,22 +1255,22 @@ export default function Lesson() {
             onComplete={xp => {
               addXP(xp)
               setSpeakingXP(xp)
-              setBlock(7)
+              setBlock(9)
             }}
           />
         )}
 
-        {block === 7 && (
+        {block === 9 && (
           <RealtimeConversation
             topic={lessonPlan?.topic || 'Daily Routines'}
             subject={subject}
             level={profile?.current_level?.[subject] || 'elementary'}
             studentName={profile?.full_name || 'Student'}
-            onComplete={xp => { addXP(xp); setBlock(8) }}
+            onComplete={xp => { addXP(xp); setBlock(10) }}
           />
         )}
 
-        {block === 8 && (
+        {block === 10 && (
           <CompleteBlock
             sessionXP={sessionXP}
             score={practiceScore.correct}

@@ -257,7 +257,7 @@ Instructions: ${plan?.contentInstructions || ''}`
 
 Generate the VOCABULARY + GRAMMAR half. Return ONLY valid JSON, no markdown:
 {
-  "vocabulary": [6 items: word, translation, pronunciation, example, example_uz, audio_text],
+  "vocabulary": [8 items: word, translation, pronunciation, example, example_uz, audio_text],
   "grammar_explanation": {
     "title": "Grammar topic in Uzbek",
     "explanation": "3-4 sentence explanation in Uzbek",
@@ -272,14 +272,14 @@ Generate the VOCABULARY + GRAMMAR half. Return ONLY valid JSON, no markdown:
 
 Generate the EXERCISES. Return ONLY valid JSON, no markdown:
 {
-  "exercises": [EXACTLY 8 items: type (fillBlank or translate), question, options (4), correct (0-3 — VARY the position across items), explanation_uz, word]
+  "exercises": [EXACTLY 10 items: type (fillBlank or translate), question, options (4), correct (0-3 — VARY the position across items), explanation_uz, word]
 }`
 
     const promptC = `${header}
 
 Generate the SPEAKING + STORY. Return ONLY valid JSON, no markdown:
 {
-  "speaking_sentences": [EXACTLY 4 items: text, uzbek, pronunciation_tip, audio_intro],
+  "speaking_sentences": [EXACTLY 5 items: text, uzbek, pronunciation_tip, audio_intro],
   "story": {
     "title": "Story title", "title_uz": "Story title in Uzbek",
     "text": "5-6 sentence story using today's vocabulary",

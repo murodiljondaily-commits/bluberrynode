@@ -7,9 +7,10 @@ export default async function handler(req, res) {
       headers: {
         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
         'Content-Type': 'application/json',
+        'OpenAI-Beta': 'realtime=v1',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-realtime-preview',
+        model: 'gpt-4o-realtime-preview-2024-12-17',
         voice: 'alloy',
       }),
       signal: AbortSignal.timeout(15000),

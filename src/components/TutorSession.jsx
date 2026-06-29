@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { sessionLogger } from '../lib/sessionLogger'
 import { playCorrect, playWrong } from '../lib/soundEffects'
+import { speak as ttsSpeak, stopSpeaking } from '../lib/voiceSystem'
 
 const LEVEL_GROUP_MAP = {
   a0: 'beginner', a1: 'beginner', beginner: 'beginner', elementary: 'beginner',
@@ -8,17 +9,11 @@ const LEVEL_GROUP_MAP = {
   b2: 'advanced', advanced: 'advanced',
 }
 
-// Browser TTS for target language (English / Russian) — NOT Uzbek
+// Target-language TTS via the SERVER voices (OpenAI shimmer for English, Yandex Alena
+// for Russian) — NOT the browser's robotic/Uzbek-accented speechSynthesis.
 function speakTarget(text, slow = false, lang = 'en-US') {
-  return new Promise((resolve) => {
-    window.speechSynthesis.cancel()
-    const u = new SpeechSynthesisUtterance(text)
-    u.lang = lang
-    u.rate = slow ? 0.5 : 0.9
-    u.onend = resolve
-    u.onerror = resolve
-    window.speechSynthesis.speak(u)
-  })
+  const language = lang.startsWith('ru') ? 'russian' : 'english'
+  return ttsSpeak(text, language, slow ? 0.7 : 1.0).catch(() => {})
 }
 
 const STEP_INFO = {
@@ -280,6 +275,7 @@ export default function TutorSession({ level = 'a1', subject = 'english', topic 
   const skipFlow = () => {
     flowCancel.current = true
     window.speechSynthesis.cancel()
+    stopSpeaking()
     audioEl.current?.pause()
     safeSet(() => { setAudioPlaying(false); setStep('student_speaks') })
   }
