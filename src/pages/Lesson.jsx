@@ -244,6 +244,38 @@ function GrammarBlock({ grammar, subject = 'english', onComplete }) {
   )
 }
 
+// ─── BLOCK 3 — Media: a topic video, then a topic podcast (both YouTube redirects) ──
+function MediaBlock({ video, topic, subject, level, onComplete }) {
+  const [step, setStep] = useState('video') // video → podcast → done
+  const [earned, setEarned] = useState(0)
+
+  if (step === 'video') {
+    return (
+      <VideoLesson
+        videoId={video?.video_id}
+        topic={topic}
+        subject={subject}
+        level={level}
+        kind="lesson"
+        preWatchText={`"${topic}" mavzusiga oid videoni tomosha qiling`}
+        questions={video?.video_questions || []}
+        onComplete={(xp) => { setEarned(xp || 0); setStep('podcast') }}
+      />
+    )
+  }
+  return (
+    <VideoLesson
+      topic={topic}
+      subject={subject}
+      level={level}
+      kind="podcast"
+      preWatchText={`"${topic}" mavzusida podkastni tinglang`}
+      questions={[]}
+      onComplete={(xp) => onComplete((earned || 0) + (xp || 0))}
+    />
+  )
+}
+
 // ─── BLOCK 4 — Exercises ──────────────────────────────────────────
 const LETTER = ['A', 'B', 'C', 'D']
 
@@ -1135,13 +1167,11 @@ export default function Lesson() {
         )}
 
         {block === 3 && (
-          <VideoLesson
-            videoId={video?.video_id}
+          <MediaBlock
+            video={video}
             topic={lessonPlan?.topic}
             subject={subject}
             level={lessonPlan?.level || routeLevel || curriculumNode?.level || ''}
-            preWatchText={`"${lessonPlan?.topic}" mavzusiga oid videoni tomosha qiling`}
-            questions={video?.video_questions || []}
             onComplete={xp => { addXP(xp); setBlock(4) }}
           />
         )}

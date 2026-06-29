@@ -15,10 +15,27 @@ const PREFERRED = [
   'Easy Russian', 'Khan Academy', 'Math Antics', 'TED-Ed',
 ]
 
-function buildQuery(subject, topic, level) {
+function buildQuery(subject, topic, level, kind) {
+  if (kind === 'podcast') {
+    if (subject === 'russian') return `${topic} подкаст русский язык для изучающих`
+    if (subject === 'math') return `${topic} matematika podkast tushuntirish`
+    return `${topic} English learning podcast for ${level || 'beginner'} learners`
+  }
+  if (kind === 'cartoon') {
+    if (subject === 'russian') return `${topic} мультфильм для детей русский`
+    if (subject === 'math') return `${topic} matematika multfilm bolalar uchun`
+    return `${topic} cartoon for kids learn English`
+  }
   if (subject === 'russian') return `${topic} русский язык урок для начинающих`
   if (subject === 'math') return `${topic} matematika dars tushuntirish`
   return `${topic} English ${level || ''} grammar lesson for learners`
+}
+
+// Allowed video length per kind (seconds). Podcasts can run much longer.
+function durationWindow(kind) {
+  if (kind === 'podcast') return [180, 3600]   // 3–60 min
+  if (kind === 'cartoon') return [60, 1500]    // 1–25 min
+  return [60, 1500]                            // lessons 1–25 min
 }
 
 // ISO8601 PT#M#S → seconds
@@ -31,7 +48,7 @@ function parseDuration(iso) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { subject = 'english', topic = '', level = '' } = req.body || {}
+  const { subject = 'english', topic = '', level = '', kind = 'lesson' } = req.body || {}
   const key = process.env.YOUTUBE_API_KEY || process.env.VITE_YOUTUBE_API_KEY
   const fb = FALLBACK[subject] || FALLBACK.english
   const fbResult = { videoId: fb.id, title: fb.title, channel: fb.channel, durationSec: fb.duration, url: `https://www.youtube.com/watch?v=${fb.id}` }
@@ -39,7 +56,8 @@ export default async function handler(req, res) {
   if (!key) return res.json({ ...fbResult, source: 'fallback-nokey' })
 
   try {
-    const q = buildQuery(subject, topic, level)
+    const q = buildQuery(subject, topic, level, kind)
+    const [minDur, maxDur] = durationWindow(kind)
     const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=8&order=relevance&safeSearch=strict&q=${encodeURIComponent(q)}&key=${key}`
     const sRes = await fetch(searchUrl, { signal: AbortSignal.timeout(10000) })
     const sData = await sRes.json()
@@ -61,7 +79,7 @@ export default async function handler(req, res) {
       channel: v.snippet?.channelTitle,
       durationSec: parseDuration(v.contentDetails?.duration),
       public: v.status?.privacyStatus === 'public',
-    })).filter(v => v.public && v.durationSec >= 60 && v.durationSec <= 1500) // 1–25 min
+    })).filter(v => v.public && v.durationSec >= minDur && v.durationSec <= maxDur)
 
     if (!vids.length) return res.json({ ...fbResult, source: 'fallback-nomatch' })
 

@@ -23,9 +23,15 @@ const L = {
 }
 const fmt = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 
-export default function VideoLesson({ videoId, topic, subject = 'english', level = '', preWatchText, questions = [], onComplete }) {
+export default function VideoLesson({ videoId, topic, subject = 'english', level = '', kind = 'lesson', preWatchText, questions = [], onComplete }) {
   const { lang } = useLang()
-  const t = (k) => L[k][lang] || L[k].uz
+  const isPodcast = kind === 'podcast'
+  const t = (k) => {
+    // Podcast-specific overrides for a couple of labels.
+    if (isPodcast && k === 'watchBtn') return lang === 'ru' ? 'Слушать на YouTube 🎧' : "YouTube'da tinglash 🎧"
+    if (isPodcast && k === 'iWatched') return lang === 'ru' ? 'Прослушал! Продолжить ✓' : "Tingladim! Davom etish ✓"
+    return L[k][lang] || L[k].uz
+  }
 
   const [video, setVideo] = useState(null) // {videoId,title,channel,durationSec,url}
   const [phase, setPhase] = useState('intro') // intro | watching | questions | alarm
@@ -40,7 +46,7 @@ export default function VideoLesson({ videoId, topic, subject = 'english', level
     let alive = true
     fetch('/api/youtube-search', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ subject, topic, level }),
+      body: JSON.stringify({ subject, topic, level, kind }),
     })
       .then(r => r.json())
       .then(d => { if (alive && d?.videoId) setVideo(d) })
@@ -49,7 +55,7 @@ export default function VideoLesson({ videoId, topic, subject = 'english', level
         if (alive) setVideo(v => v || { videoId, title: topic, channel: 'YouTube', durationSec: 360, url: `https://www.youtube.com/watch?v=${videoId}` })
       })
     return () => { alive = false }
-  }, [subject, topic, level, videoId])
+  }, [subject, topic, level, videoId, kind])
 
   // Countdown while watching.
   useEffect(() => {
@@ -164,7 +170,7 @@ export default function VideoLesson({ videoId, topic, subject = 'english', level
           <div className="relative">
             <img src={thumb} alt={video.title} className="w-full aspect-video object-cover" />
             <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-              <div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center text-white text-3xl shadow-lg">▶</div>
+              <div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center text-white text-3xl shadow-lg">{isPodcast ? '🎧' : '▶'}</div>
             </div>
             {video.durationSec > 0 && (
               <span className="absolute bottom-2 right-2 bg-black/80 text-white text-xs font-bold px-2 py-0.5 rounded">
