@@ -194,23 +194,7 @@ export default async function handler(req, res) {
     const difficulty = plan?.difficulty || 'medium'
     console.log('Generate lesson:', subject, topic, level, difficulty)
 
-    // ── Cache lookup ──────────────────────────────────────────────
-    const db = supabaseAdmin()
-    const cacheKey = `${CACHE_VERSION}::${subject}::${topic}::${level}::${difficulty}`
-    const cached = await readCache(db, cacheKey)
-    if (cached) {
-      console.log('⚡ Cache HIT:', cacheKey)
-      // Always re-attach a fresh, verified video id (cheap, avoids caching stale ids)
-      cached.youtube_video = {
-        video_id: lookupVideo(topic, subject),
-        title: topic,
-        summary_uz: `Bu video "${topic}" mavzusida qo'shimcha ma'lumot beradi`,
-        video_questions: [],
-      }
-      return res.json({ ...cached, _cached: true })
-    }
-    console.log('🔄 Cache MISS — generating:', cacheKey)
-
+    // Fully personalized per user: every lesson is generated fresh (no shared cache).
     const systemInstructions = {
       english: `You are generating English lesson content for an Uzbek speaker.
 CRITICAL RULES:
@@ -244,11 +228,13 @@ CRITICAL RULES:
 - NEVER put English or Russian in math lesson`,
     }
 
-    const contentPrompt = `${systemInstructions[subject] || systemInstructions.english}
+    const sys = systemInstructions[subject] || systemInstructions.english
+
+    const header = `${sys}
 
 ⚠️ THIS LESSON IS STRICTLY ABOUT THE TOPIC: "${topic}".
-EVERY vocabulary word, example, exercise, speaking sentence, and the story MUST be about "${topic}".
-Do NOT default to greetings, introductions, or any unrelated theme unless the topic itself is greetings.
+EVERY item you produce MUST be about "${topic}". Do NOT default to greetings, introductions,
+or any unrelated theme unless the topic itself is greetings.
 
 LESSON PLAN:
 Topic: ${plan?.topic}
@@ -256,60 +242,67 @@ Level: ${plan?.level}
 Difficulty: ${plan?.difficulty}
 Method: ${plan?.method}
 Grammar focus: ${plan?.grammarPoint}
-Words to teach: ${plan?.focusWords?.join(', ')}
-Words to review: ${plan?.reviewWords?.join(', ')}
-Weak points: ${plan?.weakPointsToAddress?.join(', ')}
-Instructions: ${plan?.contentInstructions}
+Words to teach: ${plan?.focusWords?.join(', ') || ''}
+Words to review: ${plan?.reviewWords?.join(', ') || ''}
+Weak points to reinforce: ${plan?.weakPointsToAddress?.join(', ') || ''}
+Instructions: ${plan?.contentInstructions || ''}`
 
-Generate COMPLETE lesson content. Return ONLY valid JSON, no markdown.
+    // Split generation into two smaller halves run IN PARALLEL — roughly halves
+    // latency vs one big call, and avoids truncation. No cache: fully per-user.
+    const promptA = `${header}
 
+Generate the VOCABULARY + GRAMMAR half. Return ONLY valid JSON, no markdown:
 {
-  "vocabulary": [6 items with: word, translation, pronunciation, example, example_uz, audio_text],
+  "vocabulary": [6 items: word, translation, pronunciation, example, example_uz, audio_text],
   "grammar_explanation": {
     "title": "Grammar topic in Uzbek",
     "explanation": "3-4 sentence explanation in Uzbek",
     "rule": "One sentence rule in Uzbek",
-    "examples": [{"target": "sentence", "uzbek": "translation", "note": "note in Uzbek"}],
+    "examples": [{"target":"sentence","uzbek":"translation","note":"note in Uzbek"}],
     "common_mistake": "Most common mistake in Uzbek",
     "tip": "Memory tip in Uzbek"
-  },
-  "exercises": [EXACTLY 8 items with: type (fillBlank or translate), question, options (4 items), correct (0-3 — VARY the correct index across items, do not always use the same position), explanation_uz, word],
-  "speaking_sentences": [EXACTLY 4 items with: text, uzbek, pronunciation_tip, audio_intro],
-  "story": {
-    "title": "Story title",
-    "title_uz": "Story title in Uzbek",
-    "text": "5-6 sentence story using today vocabulary",
-    "text_uz": "Complete Uzbek translation",
-    "questions": [3 items with: question, question_uz, options (4 items), correct (0-3), explanation_uz]
   }
 }`
 
-    const sys = systemInstructions[subject] || systemInstructions.english
-    // Claude Haiku is the fast primary for ALL subjects; OpenAI is the fallback.
-    let lessonContent = await callClaude(sys, contentPrompt)
-    if (!lessonContent) {
-      console.log('↩️ Claude unavailable — OpenAI fallback for', subject)
-      lessonContent = await callOpenAI(sys, contentPrompt)
+    const promptB = `${header}
+
+Generate the EXERCISES + SPEAKING + STORY half. Return ONLY valid JSON, no markdown:
+{
+  "exercises": [EXACTLY 8 items: type (fillBlank or translate), question, options (4), correct (0-3 — VARY the position across items), explanation_uz, word],
+  "speaking_sentences": [EXACTLY 4 items: text, uzbek, pronunciation_tip, audio_intro],
+  "story": {
+    "title": "Story title", "title_uz": "Story title in Uzbek",
+    "text": "5-6 sentence story using today's vocabulary",
+    "text_uz": "Complete Uzbek translation",
+    "questions": [3 items: question, question_uz, options (4), correct (0-3), explanation_uz]
+  }
+}`
+
+    const genPart = async (prompt) => {
+      let r = await callClaude(sys, prompt)
+      if (!r) r = await callOpenAI(sys, prompt)
+      return r
     }
 
-    const fromAI = !!lessonContent
-    if (fromAI) console.log('✅ AI lesson:', subject, topic, '| vocab', lessonContent.vocabulary?.length, '| ex', lessonContent.exercises?.length)
-    if (!lessonContent) {
-      console.log('⚠️ Using subject fallback for:', subject)
-      lessonContent = getSubjectFallback(subject, plan)
+    const [partA, partB] = await Promise.all([genPart(promptA), genPart(promptB)])
+    console.log('lesson parts', subject, topic, '| A:', !!partA, '| B:', !!partB)
+
+    // Merge; fill any failed half from the static fallback so the lesson is always complete.
+    const fb = getSubjectFallback(subject, plan)
+    const lessonContent = {
+      vocabulary: partA?.vocabulary?.length ? partA.vocabulary : fb.vocabulary,
+      grammar_explanation: partA?.grammar_explanation || fb.grammar_explanation,
+      exercises: partB?.exercises?.length ? partB.exercises : fb.exercises,
+      speaking_sentences: partB?.speaking_sentences?.length ? partB.speaking_sentences : fb.speaking_sentences,
+      story: partB?.story || fb.story,
     }
 
-    // Attach video from hardcoded database (AI video IDs hallucinate)
-    const videoId = lookupVideo(topic, subject)
     lessonContent.youtube_video = {
-      video_id: videoId,
+      video_id: lookupVideo(topic, subject),
       title: topic,
       summary_uz: `Bu video "${topic}" mavzusida qo'shimcha ma'lumot beradi`,
       video_questions: [],
     }
-
-    // Cache only real AI output, so the static fallback never gets pinned in cache.
-    if (fromAI) await writeCache(db, cacheKey, { subject, topic, level, difficulty }, lessonContent)
 
     res.json(lessonContent)
   } catch (err) {
