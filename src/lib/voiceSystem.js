@@ -133,9 +133,6 @@ export const speakUzbek   = (text, speed) => speak(text, 'uzbek',   speed)
 export const speakRussian = (text, speed) => speak(text, 'russian', speed)
 export const speakEnglish = (text, speed) => speak(text, 'english', speed)
 
-// Preload common Uzbek phrases silently on app start to fill cache
-export function preloadPhrases() {
-  for (const phrase of COMMON_PHRASES) {
-    speakServer(phrase, '/api/tts-uzbek').catch(() => {})
-  }
-}
+// Kept for backwards-compat. Intentionally a no-op now: we do NOT auto-play or
+// pre-generate UI phrases — voice is reserved for speaking/pronunciation only.
+export function preloadPhrases() {}

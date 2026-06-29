@@ -38,22 +38,13 @@ const clientFetch = (url, opts, ms = 30000) => {
 function buildTTSList(content, plan, subject) {
   const targetLang = subject === 'russian' ? 'russian' : subject === 'math' ? 'uzbek' : 'english'
   const items = []
-  if (plan?.aiMessage) items.push({ text: plan.aiMessage, language: 'uzbek' })
 
+  // Only pre-generate audio that the user can actually trigger:
+  //  - the target-language vocab word (manual 🔊 button on the flip card)
+  //  - speaking-block sentences (the pronunciation part)
   ;(content?.vocabulary || []).forEach((w) => {
-    items.push({ text: `${w.word} — ${w.translation}`, language: 'uzbek' })
     items.push({ text: w.audio_text || w.word, language: targetLang })
   })
-
-  // Feedback phrases reused across exercises
-  items.push(
-    { text: "To'g'ri! Zo'r!", language: 'uzbek' },
-    { text: "Xato. Qayta urinib ko'ring.", language: 'uzbek' },
-    { text: 'Mashqlarni bajaring!', language: 'uzbek' },
-    { text: 'Keyingi darsda qaytamiz', language: 'uzbek' },
-    { text: 'Tabriklayman! Dars tugadi!', language: 'uzbek' },
-  )
-
   ;(content?.speaking_sentences || []).forEach((s) => {
     const txt = typeof s === 'string' ? s : s.text
     if (txt) items.push({ text: txt, language: targetLang })
@@ -122,10 +113,8 @@ function VocabBlock({ words, subject = 'english', onComplete }) {
     const next = !flipped
     setFlipped(next)
     playFlip()
-    if (next) {
-      setSeenBack(true)
-      speak(w.audio_text || w.word, subject).catch(() => {})
-    }
+    if (next) setSeenBack(true)
+    // Note: no auto-speech here — voice only plays when the user taps the 🔊 button.
   }
 
   function handleNext() {
@@ -272,15 +261,6 @@ function ExercisesBlock({ exercises, subject = 'english', onComplete, onExercise
   const total = exercises.length
   const isFill = ex?.type === 'fillBlank' || ex?.type === 'fill'
 
-  // Fix 7: Auto-read question with Nigora when exercise changes
-  useEffect(() => {
-    if (!ex) return
-    const prompt = isFill
-      ? "Bo'shliqni to'ldiring"
-      : `${ex.question} — tarjimasi nima?`
-    speakUzbek(prompt).catch(() => {})
-  }, [exIdx]) // eslint-disable-line react-hooks/exhaustive-deps
-
   function checkChoice(optIdx) {
     if (answered) return
     setSelected(optIdx)
@@ -297,15 +277,12 @@ function ExercisesBlock({ exercises, subject = 'english', onComplete, onExercise
       setScore(s => s + 1)
       setXpEarned(x => x + 10)
       setIsCorrect(true)
-      playCorrect()
-      speakUzbek("To'g'ri! Zo'r!").catch(() => {})
+      playCorrect() // sound effect only — no spoken voice
     } else {
       setIsCorrect(false)
       setShaking(true)
       setTimeout(() => setShaking(false), 450)
-      playWrong()
-      const correctText = ex.options?.[ex.correct] || ''
-      speakUzbek(`Xato. To'g'ri javob: ${correctText}`).catch(() => {})
+      playWrong() // sound effect only — no spoken voice
     }
     setAnswered(true)
   }
@@ -327,7 +304,6 @@ function ExercisesBlock({ exercises, subject = 'english', onComplete, onExercise
   function skip() {
     if (answered) return
     onSkip?.(ex)
-    speakUzbek('Keyingi darsda qaytamiz').catch(() => {})
     next()
   }
 
@@ -439,8 +415,7 @@ function StoryBlock({ story, subject = 'english', onComplete }) {
     setAnswered(true)
     if (idx === q.correct) {
       setXp(v => v + 10)
-      playCorrect()
-      speakUzbek("To'g'ri!").catch(() => {})
+      playCorrect() // sound effect only
     } else {
       playWrong()
     }
