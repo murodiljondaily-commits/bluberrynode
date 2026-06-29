@@ -279,7 +279,7 @@ Generate the EXERCISES. Return ONLY valid JSON, no markdown:
 
 Generate the SPEAKING + STORY. Return ONLY valid JSON, no markdown:
 {
-  "speaking_sentences": [EXACTLY 5 items: text, uzbek, pronunciation_tip, audio_intro],
+  "speaking_sentences": [EXACTLY 8 items: text (target-language sentence to pronounce), uzbek (its meaning in the student's UI language), pronunciation_tip, audio_intro],
   "story": {
     "title": "Story title", "title_uz": "Story title in Uzbek",
     "text": "5-6 sentence story using today's vocabulary",

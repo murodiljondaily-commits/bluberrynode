@@ -3,6 +3,7 @@ import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import MiniTree from '../components/MiniTree'
 import TutorSession from '../components/TutorSession'
+import SpeakingLesson from '../components/SpeakingLesson'
 import SessionTimer from '../components/SessionTimer'
 import SubtleOrbs from '../components/SubtleOrbs'
 import VideoLesson from '../components/VideoLesson'
@@ -1247,12 +1248,12 @@ export default function Lesson() {
           />
         )}
 
-        {/* Block 8 — Speaking with Nigora (pronunciation + mistake feedback) */}
+        {/* Block 8 — Speaking: 8 pronunciation-check sentences with per-word scoring.
+            Target sentence spoken via OpenAI(EN)/Yandex(RU); Uzbek help via Nigora. */}
         {block === 8 && (
-          <TutorSession
-            level={profile?.current_level?.[subject] || 'elementary'}
+          <SpeakingLesson
             subject={subject}
-            topic={lessonPlan?.topic || 'greetings'}
+            sentences={lessonContent?.speaking_sentences || []}
             onComplete={xp => {
               addXP(xp)
               setSpeakingXP(xp)

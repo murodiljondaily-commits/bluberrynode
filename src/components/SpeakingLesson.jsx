@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { playCorrect, playWrong } from '../lib/soundEffects'
-import { speak } from '../lib/voiceSystem'
+import { speak, speakUzbek } from '../lib/voiceSystem'
 
+// Target language (the sentence the student pronounces) — NEVER Uzbek through OpenAI.
 const langForSubject = (s) => (s === 'russian' ? 'russian' : s === 'math' ? 'uzbek' : 'english')
 
 const FALLBACK_SENTENCES = {
@@ -65,6 +66,10 @@ export default function SpeakingLesson({ subject = 'english', sentences: propSen
   const fallback = FALLBACK_SENTENCES[subject] || FALLBACK_SENTENCES.english
   const list = (propSentences?.length > 0 ? propSentences : fallback)
   const current = list[index]
+  // Sentences may be plain strings (fallback) or objects { text, uzbek, pronunciation_tip }.
+  const currentText = typeof current === 'string' ? current : (current?.text || '')
+  const currentUz = typeof current === 'object' ? (current?.uzbek || '') : ''
+  const currentTip = typeof current === 'object' ? (current?.pronunciation_tip || '') : ''
   const isLast = index >= list.length - 1
 
   // Safety: if processing gets stuck for >35s, reset to idle
@@ -109,8 +114,8 @@ export default function SpeakingLesson({ subject = 'english', sentences: propSen
       try {
         const fd = new FormData()
         fd.append('audio', blob, 'recording.webm')
-        fd.append('language', subject === 'russian' ? 'ru' : 'en')
-        fd.append('expected', current)
+        fd.append('language', subject === 'russian' ? 'ru' : subject === 'math' ? 'uz' : 'en')
+        fd.append('expected', currentText)
 
         const response = await fetch('/api/transcribe', {
           method: 'POST',
@@ -182,22 +187,38 @@ export default function SpeakingLesson({ subject = 'english', sentences: propSen
       <div className="text-center">
         <p className="text-sm text-gray-400 mb-2">Gap {index + 1}/{list.length} 🎤</p>
         <p className="text-sm text-berry-mid font-semibold mb-3">Quyidagi gapni aytib ko'ring:</p>
-        <p className="text-2xl font-black text-berry-deep bg-berry-glow rounded-2xl px-6 py-4">{current}</p>
-        {/* Pronunciation aids: hear the target at normal + slow speed before recording */}
-        <div className="flex items-center justify-center gap-3 mt-3">
+        <p className="text-2xl font-black text-berry-deep bg-berry-glow rounded-2xl px-6 py-4">{currentText}</p>
+        {currentUz && (
+          <p className="text-sm text-gray-500 mt-2">🇺🇿 {currentUz}</p>
+        )}
+        {/* Pronunciation aids: hear the TARGET sentence (English via OpenAI, Russian via
+            Yandex), at normal + slow speed. Uzbek help uses the Uzbek Nigora voice. */}
+        <div className="flex items-center justify-center gap-2 mt-3 flex-wrap">
           <button
-            onClick={() => speak(current, langForSubject(subject), 1.0).catch(() => {})}
+            onClick={() => speak(currentText, langForSubject(subject), 1.0).catch(() => {})}
             className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-white border border-berry-light text-berry-deep font-bold text-sm shadow-sm hover:bg-berry-glow transition-all"
           >
             🔊 Tinglash
           </button>
           <button
-            onClick={() => speak(current, langForSubject(subject), 0.6).catch(() => {})}
+            onClick={() => speak(currentText, langForSubject(subject), 0.6).catch(() => {})}
             className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-white border border-berry-light text-berry-mid font-bold text-sm shadow-sm hover:bg-berry-glow transition-all"
           >
             🐢 Sekin
           </button>
+          {(currentTip || currentUz) && (
+            <button
+              onClick={() => speakUzbek(currentTip || currentUz).catch(() => {})}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-purple-50 border border-purple-200 text-purple-700 font-bold text-sm shadow-sm hover:bg-purple-100 transition-all"
+              title="Nigora o'zbekcha tushuntiradi"
+            >
+              🌸 Tushunmadim
+            </button>
+          )}
         </div>
+        {currentTip && (
+          <p className="text-xs text-gray-400 italic mt-2">💡 {currentTip}</p>
+        )}
       </div>
 
       {/* Error message (inline, not blocking alert) */}
