@@ -266,9 +266,15 @@ Generate the VOCABULARY + GRAMMAR half. Return ONLY valid JSON, no markdown:
 
     const promptB = `${header}
 
-Generate the EXERCISES + SPEAKING + STORY half. Return ONLY valid JSON, no markdown:
+Generate the EXERCISES. Return ONLY valid JSON, no markdown:
 {
-  "exercises": [EXACTLY 8 items: type (fillBlank or translate), question, options (4), correct (0-3 — VARY the position across items), explanation_uz, word],
+  "exercises": [EXACTLY 8 items: type (fillBlank or translate), question, options (4), correct (0-3 — VARY the position across items), explanation_uz, word]
+}`
+
+    const promptC = `${header}
+
+Generate the SPEAKING + STORY. Return ONLY valid JSON, no markdown:
+{
   "speaking_sentences": [EXACTLY 4 items: text, uzbek, pronunciation_tip, audio_intro],
   "story": {
     "title": "Story title", "title_uz": "Story title in Uzbek",
@@ -284,17 +290,18 @@ Generate the EXERCISES + SPEAKING + STORY half. Return ONLY valid JSON, no markd
       return r
     }
 
-    const [partA, partB] = await Promise.all([genPart(promptA), genPart(promptB)])
-    console.log('lesson parts', subject, topic, '| A:', !!partA, '| B:', !!partB)
+    // 3 parallel calls → total latency ≈ the slowest single half (~15s) not the sum.
+    const [partA, partB, partC] = await Promise.all([genPart(promptA), genPart(promptB), genPart(promptC)])
+    console.log('lesson parts', subject, topic, '| A:', !!partA, '| B:', !!partB, '| C:', !!partC)
 
-    // Merge; fill any failed half from the static fallback so the lesson is always complete.
+    // Merge; fill any failed part from the static fallback so the lesson is always complete.
     const fb = getSubjectFallback(subject, plan)
     const lessonContent = {
       vocabulary: partA?.vocabulary?.length ? partA.vocabulary : fb.vocabulary,
       grammar_explanation: partA?.grammar_explanation || fb.grammar_explanation,
       exercises: partB?.exercises?.length ? partB.exercises : fb.exercises,
-      speaking_sentences: partB?.speaking_sentences?.length ? partB.speaking_sentences : fb.speaking_sentences,
-      story: partB?.story || fb.story,
+      speaking_sentences: partC?.speaking_sentences?.length ? partC.speaking_sentences : fb.speaking_sentences,
+      story: partC?.story || fb.story,
     }
 
     lessonContent.youtube_video = {
