@@ -99,6 +99,60 @@ function parseJson(text) {
   )
 }
 
+// Generate lesson JSON via OpenAI (reliable primary for English, fallback for all).
+async function callOpenAI(system, prompt) {
+  try {
+    const r = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        max_tokens: 2600,
+        temperature: 0.7,
+        response_format: { type: 'json_object' },
+        messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
+      }),
+      signal: AbortSignal.timeout(28000),
+    })
+    const d = await r.json()
+    if (!r.ok || !d.choices?.[0]) {
+      console.error('OpenAI gen error', r.status, JSON.stringify(d).slice(0, 160))
+      return null
+    }
+    return parseJson(d.choices[0].message.content)
+  } catch (e) {
+    console.error('OpenAI gen exception', e.message)
+    return null
+  }
+}
+
+// Generate lesson JSON via Gemini (fast/cheap primary for ru/math when quota allows).
+async function callGemini(prompt) {
+  try {
+    const r = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.7, maxOutputTokens: 2600, responseMimeType: 'application/json' },
+        }),
+        signal: AbortSignal.timeout(28000),
+      }
+    )
+    const d = await r.json()
+    if (!r.ok || !d.candidates?.[0]) {
+      console.error('Gemini gen error', r.status, JSON.stringify(d).slice(0, 160))
+      return null
+    }
+    return parseJson(d.candidates[0].content.parts[0].text)
+  } catch (e) {
+    console.error('Gemini gen exception', e.message)
+    return null
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
@@ -195,60 +249,26 @@ Generate COMPLETE lesson content. Return ONLY valid JSON, no markdown.
   }
 }`
 
+    const sys = systemInstructions[subject] || systemInstructions.english
     let lessonContent = null
 
     if (subject === 'english') {
-      const gptResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          max_tokens: 2600,
-          temperature: 0.7,
-          response_format: { type: 'json_object' },
-          messages: [
-            { role: 'system', content: systemInstructions.english },
-            { role: 'user', content: contentPrompt },
-          ],
-        }),
-        signal: AbortSignal.timeout(28000),
-      })
-      const gptData = await gptResponse.json()
-      console.log('GPT status:', gptResponse.status, 'tokens:', gptData.usage?.total_tokens)
-      if (gptData.choices?.[0]) {
-        try {
-          lessonContent = parseJson(gptData.choices[0].message.content)
-          console.log('✅ GPT lesson:', lessonContent.vocabulary?.length, 'words,', lessonContent.exercises?.length, 'exercises')
-        } catch (e) {
-          console.error('GPT parse error:', e.message)
-        }
-      }
+      // English: OpenAI is primary (best quality), Gemini is the cheap fallback.
+      lessonContent = await callOpenAI(sys, contentPrompt)
+      if (!lessonContent) lessonContent = await callGemini(contentPrompt)
     } else {
-      const geminiResponse = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: contentPrompt }] }],
-            generationConfig: { temperature: 0.7, maxOutputTokens: 2600, responseMimeType: 'application/json' },
-          }),
-          signal: AbortSignal.timeout(28000),
-        }
-      )
-      const geminiData = await geminiResponse.json()
-      console.log('Gemini status:', geminiResponse.status)
-      if (geminiData.candidates?.[0]) {
-        try {
-          lessonContent = parseJson(geminiData.candidates[0].content.parts[0].text)
-          console.log('✅ Gemini lesson:', subject, lessonContent.vocabulary?.length, 'words,', lessonContent.exercises?.length, 'exercises')
-        } catch (e) {
-          console.error('Gemini parse error:', e.message)
-        }
+      // Russian/Math: Gemini is cheap/fast primary, but if it's unavailable
+      // (e.g. quota 429) fall back to OpenAI so we still serve REAL adaptive
+      // content for the requested topic instead of generic static fallback.
+      lessonContent = await callGemini(contentPrompt)
+      if (!lessonContent) {
+        console.log('↩️ Gemini unavailable — OpenAI fallback for', subject)
+        lessonContent = await callOpenAI(sys, contentPrompt)
       }
     }
 
     const fromAI = !!lessonContent
+    if (fromAI) console.log('✅ AI lesson:', subject, topic, '| vocab', lessonContent.vocabulary?.length, '| ex', lessonContent.exercises?.length)
     if (!lessonContent) {
       console.log('⚠️ Using subject fallback for:', subject)
       lessonContent = getSubjectFallback(subject, plan)

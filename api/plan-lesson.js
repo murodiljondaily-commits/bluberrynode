@@ -37,6 +37,33 @@ function decideLevel(currentLevel, sessions) {
   return { level: currentLevel, changed: false, reason: `Holding at ${currentLevel} (recent avg ${Math.round(avg)}%)` }
 }
 
+// OpenAI fallback for the planning brain when Gemini is unavailable (e.g. quota 429).
+async function planWithOpenAI(prompt) {
+  try {
+    const r = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        max_tokens: 700,
+        temperature: 0.6,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: 'You are an expert adaptive tutor. Return ONLY valid JSON for the lesson plan requested.' },
+          { role: 'user', content: prompt },
+        ],
+      }),
+      signal: AbortSignal.timeout(20000),
+    })
+    const d = await r.json()
+    if (!r.ok || !d.choices?.[0]) { console.error('OpenAI plan error', r.status, JSON.stringify(d).slice(0, 150)); return null }
+    return JSON.parse(d.choices[0].message.content)
+  } catch (e) {
+    console.error('OpenAI plan exception', e.message)
+    return null
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
@@ -216,30 +243,34 @@ Return ONLY valid JSON, no markdown:
       contentInstructions: `Generate ${subject} lesson about ${currentTopic} at ${level} level in Uzbek explanations.`,
     }
 
-    if (!geminiData.candidates?.[0]) {
-      console.error('Gemini failed:', JSON.stringify(geminiData).slice(0, 200))
-      return res.json(fallbackPlan)
+    // Parse Gemini → else OpenAI fallback → else static plan.
+    let plan = null
+    if (geminiData.candidates?.[0]) {
+      try {
+        plan = JSON.parse(geminiData.candidates[0].content.parts[0].text
+          .replace(/```json\n?/g, '').replace(/```\n?/g, '').trim())
+      } catch (e) { console.error('Gemini plan parse error:', e.message) }
+    } else {
+      console.error('Gemini plan failed:', JSON.stringify(geminiData).slice(0, 160))
     }
 
-    const planText = geminiData.candidates[0].content.parts[0].text
-      .replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-
-    try {
-      const plan = JSON.parse(planText)
-      // Force the adaptive fields + chosen topic so the content cache key is stable
-      // and the level the brain decided is authoritative (not whatever Gemini echoed).
-      plan.topic = currentTopic
-      plan.level = level
-      plan.difficulty = difficulty
-      plan.levelChanged = decision.changed
-      plan.previousLevel = baseLevel
-      plan.levelReason = decision.reason
-      console.log('✅ Gemini plan:', plan.topic, '|', plan.method, '|', level, '|', difficulty)
-      res.json(plan)
-    } catch (e) {
-      console.error('Parse error:', e.message)
-      res.json(fallbackPlan)
+    if (!plan) {
+      console.log('↩️ Gemini plan unavailable — OpenAI fallback')
+      plan = await planWithOpenAI(geminiPrompt)
     }
+
+    if (!plan) return res.json(fallbackPlan)
+
+    // Force the adaptive fields + chosen topic so the content cache key is stable
+    // and the level the brain decided is authoritative (not whatever the model echoed).
+    plan.topic = currentTopic
+    plan.level = level
+    plan.difficulty = difficulty
+    plan.levelChanged = decision.changed
+    plan.previousLevel = baseLevel
+    plan.levelReason = decision.reason
+    console.log('✅ Plan:', plan.topic, '|', plan.method, '|', level, '|', difficulty)
+    res.json(plan)
   } catch (err) {
     console.error('plan-lesson error:', err)
     res.status(500).json({ error: err.message })
