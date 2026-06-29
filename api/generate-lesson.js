@@ -107,12 +107,12 @@ async function callOpenAI(system, prompt) {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
-        max_tokens: 2600,
+        max_tokens: 3200,
         temperature: 0.7,
         response_format: { type: 'json_object' },
         messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
       }),
-      signal: AbortSignal.timeout(28000),
+      signal: AbortSignal.timeout(18000),
     })
     const d = await r.json()
     if (!r.ok || !d.choices?.[0]) {
@@ -138,12 +138,12 @@ async function callClaude(system, prompt) {
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5',
-        max_tokens: 4096,
+        max_tokens: 8000,
         temperature: 0.7,
         system,
         messages: [{ role: 'user', content: prompt + '\n\nReturn ONLY the JSON object, no prose, no markdown fences.' }],
       }),
-      signal: AbortSignal.timeout(28000),
+      signal: AbortSignal.timeout(40000),
     })
     const d = await r.json()
     if (!r.ok || !d.content?.[0]?.text) {
@@ -260,7 +260,7 @@ Instructions: ${plan?.contentInstructions}
 Generate COMPLETE lesson content. Return ONLY valid JSON, no markdown.
 
 {
-  "vocabulary": [8 items with: word, translation, pronunciation, example, example_uz, audio_text],
+  "vocabulary": [6 items with: word, translation, pronunciation, example, example_uz, audio_text],
   "grammar_explanation": {
     "title": "Grammar topic in Uzbek",
     "explanation": "3-4 sentence explanation in Uzbek",
@@ -269,12 +269,12 @@ Generate COMPLETE lesson content. Return ONLY valid JSON, no markdown.
     "common_mistake": "Most common mistake in Uzbek",
     "tip": "Memory tip in Uzbek"
   },
-  "exercises": [EXACTLY 12 items with: type (fillBlank or translate), question, options (4 items), correct (0-3 — VARY the correct index across items, do not always use the same position), explanation_uz, word],
-  "speaking_sentences": [EXACTLY 6 items with: text, uzbek, pronunciation_tip, audio_intro],
+  "exercises": [EXACTLY 8 items with: type (fillBlank or translate), question, options (4 items), correct (0-3 — VARY the correct index across items, do not always use the same position), explanation_uz, word],
+  "speaking_sentences": [EXACTLY 4 items with: text, uzbek, pronunciation_tip, audio_intro],
   "story": {
     "title": "Story title",
     "title_uz": "Story title in Uzbek",
-    "text": "6-8 sentence story using today vocabulary",
+    "text": "5-6 sentence story using today vocabulary",
     "text_uz": "Complete Uzbek translation",
     "questions": [3 items with: question, question_uz, options (4 items), correct (0-3), explanation_uz]
   }
