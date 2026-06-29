@@ -246,6 +246,10 @@ CRITICAL RULES:
 
     const contentPrompt = `${systemInstructions[subject] || systemInstructions.english}
 
+⚠️ THIS LESSON IS STRICTLY ABOUT THE TOPIC: "${topic}".
+EVERY vocabulary word, example, exercise, speaking sentence, and the story MUST be about "${topic}".
+Do NOT default to greetings, introductions, or any unrelated theme unless the topic itself is greetings.
+
 LESSON PLAN:
 Topic: ${plan?.topic}
 Level: ${plan?.level}
