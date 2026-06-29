@@ -1138,6 +1138,8 @@ export default function Lesson() {
           <VideoLesson
             videoId={video?.video_id}
             topic={lessonPlan?.topic}
+            subject={subject}
+            level={lessonPlan?.level || routeLevel || curriculumNode?.level || ''}
             preWatchText={`"${lessonPlan?.topic}" mavzusiga oid videoni tomosha qiling`}
             questions={video?.video_questions || []}
             onComplete={xp => { addXP(xp); setBlock(4) }}
