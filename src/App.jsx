@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { supabase } from './lib/supabaseClient'
+import { ThemeProvider } from './context/ThemeContext'
+import { LanguageProvider } from './context/LanguageContext'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
 import Register from './pages/Register'
@@ -36,6 +38,8 @@ export default function App() {
   }, [])
 
   return (
+    <LanguageProvider>
+    <ThemeProvider>
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Landing />} />
@@ -88,5 +92,7 @@ export default function App() {
         <Route path="/settings" element={<ProtectedRoute session={session}><Settings /></ProtectedRoute>} />
       </Routes>
     </BrowserRouter>
+    </ThemeProvider>
+    </LanguageProvider>
   )
 }

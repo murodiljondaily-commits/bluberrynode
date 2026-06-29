@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import MiniTree from '../components/MiniTree'
 import TutorSession from '../components/TutorSession'
@@ -10,8 +10,10 @@ import RealtimeConversation from '../components/RealtimeConversation'
 import { sessionLogger } from '../lib/sessionLogger'
 import { AdaptiveEngine } from '../lib/exerciseEngine'
 import { vocabularyManager } from '../lib/vocabularyManager'
-import { speak, speakUzbek, speakEnglish } from '../lib/voiceSystem'
+import { speak, speakUzbek, speakEnglish, prefetchMany } from '../lib/voiceSystem'
 import { playCorrect, playWrong, playCelebration, playFlip } from '../lib/soundEffects'
+import { getCurriculumNode } from '../data/curriculum'
+import { useLang } from '../context/LanguageContext'
 
 // ── Fisher-Yates shuffle for exercise options (Fix 4: randomize correct position)
 function shuffleOptions(exercise) {
@@ -29,6 +31,35 @@ const clientFetch = (url, opts, ms = 30000) => {
   const ctrl = new AbortController()
   const t = setTimeout(() => ctrl.abort(), ms)
   return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(t))
+}
+
+// Build the full list of audio clips a lesson needs, so they can be pre-generated
+// up front (via the server TTS endpoints) and play back instantly during the lesson.
+function buildTTSList(content, plan, subject) {
+  const targetLang = subject === 'russian' ? 'russian' : subject === 'math' ? 'uzbek' : 'english'
+  const items = []
+  if (plan?.aiMessage) items.push({ text: plan.aiMessage, language: 'uzbek' })
+
+  ;(content?.vocabulary || []).forEach((w) => {
+    items.push({ text: `${w.word} — ${w.translation}`, language: 'uzbek' })
+    items.push({ text: w.audio_text || w.word, language: targetLang })
+  })
+
+  // Feedback phrases reused across exercises
+  items.push(
+    { text: "To'g'ri! Zo'r!", language: 'uzbek' },
+    { text: "Xato. Qayta urinib ko'ring.", language: 'uzbek' },
+    { text: 'Mashqlarni bajaring!', language: 'uzbek' },
+    { text: 'Keyingi darsda qaytamiz', language: 'uzbek' },
+    { text: 'Tabriklayman! Dars tugadi!', language: 'uzbek' },
+  )
+
+  ;(content?.speaking_sentences || []).forEach((s) => {
+    const txt = typeof s === 'string' ? s : s.text
+    if (txt) items.push({ text: txt, language: targetLang })
+  })
+
+  return items
 }
 
 // ─── Confetti ─────────────────────────────────────────────────────
@@ -227,7 +258,7 @@ function GrammarBlock({ grammar, subject = 'english', onComplete }) {
 // ─── BLOCK 4 — Exercises ──────────────────────────────────────────
 const LETTER = ['A', 'B', 'C', 'D']
 
-function ExercisesBlock({ exercises, subject = 'english', onComplete, onExerciseLog }) {
+function ExercisesBlock({ exercises, subject = 'english', onComplete, onExerciseLog, onSkip }) {
   const [exIdx, setExIdx] = useState(0)
   const [answered, setAnswered] = useState(false)
   const [isCorrect, setIsCorrect] = useState(null)
@@ -291,6 +322,13 @@ function ExercisesBlock({ exercises, subject = 'english', onComplete, onExercise
       const finalScore = score + (isCorrect ? 1 : 0)
       onComplete(xpEarned, finalScore, total)
     }
+  }
+
+  function skip() {
+    if (answered) return
+    onSkip?.(ex)
+    speakUzbek('Keyingi darsda qaytamiz').catch(() => {})
+    next()
   }
 
   if (!ex) return null
@@ -364,6 +402,17 @@ function ExercisesBlock({ exercises, subject = 'english', onComplete, onExercise
               className="bg-berry-deep text-white font-black px-10 py-3 rounded-full shadow-lg hover:bg-berry-dark hover:scale-[1.02] transition-all"
             >
               {exIdx < total - 1 ? 'Keyingisi →' : "Natijani ko'rish →"}
+            </button>
+          </div>
+        )}
+
+        {!answered && (
+          <div className="mt-5 text-center">
+            <button
+              onClick={skip}
+              className="text-sm font-semibold text-gray-400 hover:text-berry-mid transition-colors"
+            >
+              O'tkazib yuborish → (keyingi darsda qaytamiz)
             </button>
           </div>
         )}
@@ -505,8 +554,9 @@ function StoryBlock({ story, subject = 'english', onComplete }) {
 // ─── BLOCK 7 — Complete ───────────────────────────────────────────
 function CompleteBlock({
   sessionXP, score, total, wordsCount, speakingXP,
-  profile, userId, lessonWords, subject, lessonNum, lessonTopic,
-  onDashboard, onNextLesson,
+  profile, userId, lessonWords, subject, lessonNum, lessonTopic, lessonLevel,
+  wrongAnswers = [], skipped = [], lang = 'uz',
+  onDashboard, onNextLesson, onRoadmap,
 }) {
   const [displayXP, setDisplayXP] = useState(0)
   const savedRef = useRef(false)
@@ -603,6 +653,23 @@ function CompleteBlock({
       }).eq('id', userId)
 
       console.log('✅ Saved XP, streak, lesson', lessonNum, '→', lessonNum + 1)
+
+      // 6. Upsert per-subject student_progress (source of truth for the spider-web roadmap).
+      //    Safe no-op if the table/migration isn't present yet.
+      const accuracyPct = total > 0 ? Math.round((score / total) * 100) : 0
+      const completedForSubject = completedList
+      await supabase.from('student_progress').upsert({
+        user_id: userId,
+        subject,
+        current_lesson: lessonNum + 1,
+        current_level: lessonLevel || 'A0',
+        completed_lessons: completedForSubject,
+        avg_accuracy: accuracyPct,
+        last_studied: today,
+        streak: newStreak,
+        total_berries_earned: sessionXP,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id,subject' }).then(() => {}, (e) => console.warn('student_progress upsert skipped:', e?.message))
     }
 
     save()
@@ -645,6 +712,29 @@ function CompleteBlock({
           <p className="text-green-600 font-bold mt-2">Ko'chatchangiz o'sdi! 🫐</p>
         </div>
 
+        {/* Wrong / skipped review */}
+        {(wrongAnswers.length > 0 || skipped.length > 0) && (
+          <div className="w-full max-w-xs bg-berry-glow rounded-2xl p-4 text-left">
+            <h3 className="font-bold text-berry-deep mb-2 text-sm">
+              ⚠️ {lang === 'ru' ? 'Повторите эти слова:' : "Bu so'zlarni takrorlang:"}
+            </h3>
+            {wrongAnswers.map((ex, i) => (
+              <div key={`w${i}`} className="flex justify-between items-center gap-2 py-1.5 border-b border-berry-light/60">
+                <span className="text-xs text-red-500 truncate">❌ {ex.question}</span>
+                <span className="text-xs font-bold text-berry-deep shrink-0">✓ {ex.correctAnswer}</span>
+              </div>
+            ))}
+            {skipped.map((s, i) => (
+              <div key={`s${i}`} className="flex justify-between items-center gap-2 py-1.5 border-b border-berry-light/60">
+                <span className="text-xs text-yellow-600 truncate">
+                  ⏭️ {lang === 'ru' ? 'Пропущено:' : "O'tkazildi:"} {s.question}
+                </span>
+                <span className="text-xs font-bold text-berry-deep shrink-0">{s.correctAnswer}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="flex flex-col gap-3 w-full max-w-xs">
           <button
             onClick={onNextLesson}
@@ -653,10 +743,16 @@ function CompleteBlock({
             Keyingi dars →
           </button>
           <button
-            onClick={onDashboard}
+            onClick={onRoadmap}
             className="border-2 border-berry-mid text-berry-mid font-bold py-3 rounded-full hover:bg-berry-glow transition-all"
           >
-            Bosh sahifaga →
+            🕸️ {lang === 'ru' ? 'Карта уроков' : 'Darslar xaritasi'}
+          </button>
+          <button
+            onClick={onDashboard}
+            className="text-gray-400 font-semibold py-2 hover:text-berry-mid transition-all text-sm"
+          >
+            🏠 {lang === 'ru' ? 'Главная' : 'Bosh sahifa'}
           </button>
         </div>
       </div>
@@ -754,7 +850,13 @@ function getFallbackContent() {
 export default function Lesson() {
   const { subject = 'english', week = '1' } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
+  const { lang } = useLang()
   const lessonNum = parseInt(week) || 1
+
+  // Route state from the Roadmap (spider-web): isRevision, topic, level
+  const { isRevision = false, topic: routeTopic, level: routeLevel } = location.state || {}
+  const curriculumNode = getCurriculumNode(subject, lessonNum)
 
   // 0=welcome,1=vocab,2=grammar,3=video,4=exercises,5=story,6=speaking,7=complete
   const [block, setBlock] = useState(0)
@@ -767,6 +869,8 @@ export default function Lesson() {
   const [loadingTip, setLoadingTip] = useState(0)
   const [lessonPlan, setLessonPlan] = useState(null)
   const [lessonContent, setLessonContent] = useState(null)
+  const [wrongAnswers, setWrongAnswers] = useState([])
+  const [skipped, setSkipped] = useState([])
 
   const engineRef = useRef(null)
   const apiLockRef = useRef(false)
@@ -793,8 +897,14 @@ export default function Lesson() {
         content.exercises = content.exercises.map(shuffleOptions)
       }
       setLessonContent(content)
-      if (plan) setLessonPlan(p => p || plan)
+      let finalPlan
+      setLessonPlan(p => { finalPlan = p || plan; return finalPlan })
       setLoading(false)
+      // Pre-generate ALL lesson audio in the background (via server TTS endpoints)
+      // so vocab, feedback and speaking clips play instantly. Non-blocking.
+      try {
+        prefetchMany(buildTTSList(content, finalPlan || plan, subject)).catch(() => {})
+      } catch { /* non-critical */ }
     }
 
     const timeoutId = setTimeout(() => {
@@ -819,7 +929,9 @@ export default function Lesson() {
         const firstName = data?.full_name?.split(' ')[0] || "o'quvchi"
 
         const localFallbackPlan = {
-          topic: subject === 'english' ? "Asosiy fe'llar" : subject === 'russian' ? 'Основные глаголы' : 'Asosiy amallar',
+          topic: routeTopic || curriculumNode?.topic ||
+            (subject === 'english' ? "Asosiy fe'llar" : subject === 'russian' ? 'Основные глаголы' : 'Asosiy amallar'),
+          level: routeLevel || curriculumNode?.level,
           difficulty: data?.current_level?.[subject] || 'elementary',
           method: 'mixed',
           focusWords: [],
@@ -889,8 +1001,25 @@ export default function Lesson() {
     sessionLogger.logExercise?.(data)
     if (!data.isCorrect && data.correctAnswer) {
       sessionLogger.logWrongWord?.(data.correctAnswer)
+      setWrongAnswers(prev => [...prev, { question: data.question, correctAnswer: data.correctAnswer }])
     }
     engineRef.current?.recordAnswer(data.isCorrect)
+  }
+
+  // Skip an exercise: remember it for review and save the word to the bank as needs_review.
+  function handleSkip(ex) {
+    const correctAnswer = ex.options?.[ex.correct] || ''
+    setSkipped(prev => [...prev, { question: ex.question, correctAnswer }])
+    if (userId && correctAnswer) {
+      supabase.from('vocabulary_bank').upsert({
+        user_id: userId,
+        word: correctAnswer,
+        translation: ex.explanation_uz || '',
+        subject,
+        skipped_count: 1,
+        status: 'needs_review',
+      }, { onConflict: 'user_id,word' }).then(() => {}, () => {})
+    }
   }
 
   const TOTAL_BLOCKS = 8
@@ -1044,6 +1173,7 @@ export default function Lesson() {
                 exercises={exercises}
                 subject={subject}
                 onExerciseLog={handleExerciseLog}
+                onSkip={handleSkip}
                 onComplete={(xp, correct, total) => {
                   addXP(xp)
                   setPracticeScore({ correct, total })
@@ -1105,7 +1235,12 @@ export default function Lesson() {
             subject={subject}
             lessonNum={lessonNum}
             lessonTopic={lessonPlan?.topic}
+            lessonLevel={lessonPlan?.level || routeLevel || curriculumNode?.level}
+            wrongAnswers={wrongAnswers}
+            skipped={skipped}
+            lang={lang}
             onDashboard={() => navigate('/dashboard')}
+            onRoadmap={() => navigate('/roadmap')}
             onNextLesson={() => navigate(`/lesson/${subject}/${lessonNum + 1}`)}
           />
         )}

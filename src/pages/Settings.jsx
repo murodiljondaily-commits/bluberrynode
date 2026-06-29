@@ -2,6 +2,11 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import SubtleOrbs from '../components/SubtleOrbs'
+import { useLang } from '../context/LanguageContext'
+import { t } from '../lib/translations'
+import { getTheme } from '../lib/themes'
+
+const ALL_SUBJECTS = ['english', 'russian', 'math']
 
 const DAILY_GOALS = [15, 30, 60, 90]
 const SUBJECTS_LIST = [
@@ -21,6 +26,7 @@ function Section({ title, children }) {
 
 export default function Settings() {
   const navigate = useNavigate()
+  const { lang, changeLang } = useLang()
   const [profile, setProfile] = useState(null)
   const [userId, setUserId] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -95,6 +101,22 @@ export default function Settings() {
     setSubjects(prev =>
       prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
     )
+  }
+
+  // One-tap add a new subject: persist to profile.subjects, seed its progress row,
+  // then send the user into onboarding/assessment for that subject.
+  async function addSubject(sub) {
+    if (!userId || subjects.includes(sub)) return
+    const updated = [...subjects, sub]
+    setSubjects(updated)
+    await supabase.from('profiles').update({ subjects: updated }).eq('id', userId)
+    await supabase.from('student_progress').upsert({
+      user_id: userId,
+      subject: sub,
+      current_lesson: 1,
+      current_level: 'A0',
+    }, { onConflict: 'user_id,subject' }).then(() => {}, () => {})
+    navigate('/onboarding', { state: { addSubject: sub } })
   }
 
   if (loading) return (
@@ -172,6 +194,44 @@ export default function Settings() {
                 <span className="ml-auto">{subjects.includes(id) ? '✓' : '+'}</span>
               </button>
             ))}
+          </div>
+        </Section>
+
+        {/* Add subject (one-tap) */}
+        {ALL_SUBJECTS.filter(s => !subjects.includes(s)).length > 0 && (
+          <Section title={t('addSubject', lang)}>
+            <div className="flex flex-col gap-2">
+              {ALL_SUBJECTS.filter(s => !subjects.includes(s)).map(sub => {
+                const th = getTheme(sub)
+                const key = `start${sub.charAt(0).toUpperCase() + sub.slice(1)}`
+                return (
+                  <button key={sub} onClick={() => addSubject(sub)}
+                    className="w-full py-3 px-4 rounded-2xl font-semibold text-left transition-all"
+                    style={{ background: th.glow, color: th.primary, border: `2px solid ${th.light}` }}>
+                    {th.flag} {t(key, lang)}
+                    <span className="float-right text-sm opacity-60">{t('checkLevel', lang)} →</span>
+                  </button>
+                )
+              })}
+            </div>
+          </Section>
+        )}
+
+        {/* UI language */}
+        <Section title={t('chooseLanguage', lang)}>
+          <div className="flex gap-2">
+            <button onClick={() => changeLang('uz')}
+              className={`flex-1 py-3 rounded-2xl font-bold transition-all ${
+                lang === 'uz' ? 'bg-berry-deep text-white' : 'bg-gray-100 text-gray-500'
+              }`}>
+              🇺🇿 O'zbek
+            </button>
+            <button onClick={() => changeLang('ru')}
+              className={`flex-1 py-3 rounded-2xl font-bold transition-all ${
+                lang === 'ru' ? 'bg-berry-deep text-white' : 'bg-gray-100 text-gray-500'
+              }`}>
+              🇷🇺 Русский
+            </button>
           </div>
         </Section>
 

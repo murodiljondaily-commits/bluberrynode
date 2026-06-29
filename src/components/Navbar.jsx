@@ -1,5 +1,30 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useLang } from '../context/LanguageContext'
+
+function LangToggle() {
+  const { lang, changeLang } = useLang()
+  return (
+    <div className="flex gap-1">
+      <button
+        onClick={() => changeLang('uz')}
+        className={`px-3 py-1 rounded-full text-sm font-bold transition-all ${
+          lang === 'uz' ? 'bg-berry-deep text-white' : 'bg-transparent text-gray-400'
+        }`}
+      >
+        🇺🇿 O'zbek
+      </button>
+      <button
+        onClick={() => changeLang('ru')}
+        className={`px-3 py-1 rounded-full text-sm font-bold transition-all ${
+          lang === 'ru' ? 'bg-berry-deep text-white' : 'bg-transparent text-gray-400'
+        }`}
+      >
+        🇷🇺 Русский
+      </button>
+    </div>
+  )
+}
 
 function BerryLogo({ white }) {
   const color = white ? '#fff' : '#3D1F6E'
@@ -45,6 +70,7 @@ export default function Navbar() {
         </div>
 
         <div className="hidden md:flex items-center gap-3">
+          <LangToggle />
           <Link
             to="/login"
             className="text-berry-deep font-semibold px-5 py-2 rounded-full border-2 border-berry-light hover:border-berry-mid hover:bg-berry-glow transition-all duration-300"

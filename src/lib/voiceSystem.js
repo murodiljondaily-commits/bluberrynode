@@ -22,34 +22,66 @@ export function stopSpeaking() {
   }
 }
 
-async function speakServer(text, endpoint, speed = 1.0) {
+// Fetch a TTS clip into the cache WITHOUT playing it. Used to pre-generate
+// all of a lesson's audio up front so playback later is instant.
+async function fetchToCache(text, endpoint, speed = 1.0) {
   const cacheKey = `${endpoint}::${text}::${speed}`
   let blob = audioCache.get(cacheKey)
-
-  if (!blob) {
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, speed }),
-      })
-      if (!response.ok) {
-        const ct = response.headers.get('content-type') || ''
-        if (ct.includes('json')) {
-          const err = await response.json()
-          console.warn('TTS server error:', err)
-        } else {
-          console.warn('TTS server error:', response.status)
-        }
-        return
-      }
-      blob = await response.blob()
-      audioCache.set(cacheKey, blob)
-    } catch (err) {
-      console.warn('TTS fetch failed:', err.message)
-      return
+  if (blob) return blob
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, speed }),
+    })
+    if (!response.ok) {
+      const ct = response.headers.get('content-type') || ''
+      if (ct.includes('json')) console.warn('TTS server error:', await response.json())
+      else console.warn('TTS server error:', response.status)
+      return null
     }
+    blob = await response.blob()
+    audioCache.set(cacheKey, blob)
+    return blob
+  } catch (err) {
+    console.warn('TTS fetch failed:', err.message)
+    return null
   }
+}
+
+function endpointFor(language) {
+  if (language === 'russian') return '/api/tts-russian'
+  if (language === 'english') return '/api/tts'
+  return '/api/tts-uzbek'
+}
+
+// Resolve 'auto' the same way speak() does, then warm the cache.
+export async function prefetch(text, language = 'auto', speed = 1.0) {
+  if (!text?.trim()) return
+  let lang = language
+  if (language === 'auto') {
+    if (isRussian(text)) lang = 'russian'
+    else if (isUzbek(text)) lang = 'uzbek'
+    else lang = 'english'
+  }
+  await fetchToCache(text, endpointFor(lang), speed)
+}
+
+// Pre-generate many clips in parallel batches. Accepts [{ text, language, speed }].
+export async function prefetchMany(items, batchSize = 5) {
+  const list = items.filter((i) => i?.text?.trim())
+  let done = 0
+  for (let i = 0; i < list.length; i += batchSize) {
+    const batch = list.slice(i, i + batchSize)
+    await Promise.all(batch.map((i) => prefetch(i.text, i.language || 'auto', i.speed || 1.0).then(() => { done++ })))
+  }
+  console.log(`✅ Pre-generated ${done}/${list.length} audio clips`)
+  return done
+}
+
+async function speakServer(text, endpoint, speed = 1.0) {
+  const blob = await fetchToCache(text, endpoint, speed)
+  if (!blob) return
 
   stopSpeaking()
   const url = URL.createObjectURL(blob)

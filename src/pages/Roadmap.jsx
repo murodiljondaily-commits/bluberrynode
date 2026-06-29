@@ -1,190 +1,246 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
-import SubtleOrbs from '../components/SubtleOrbs'
+import { useTheme } from '../context/ThemeContext'
+import { useLang } from '../context/LanguageContext'
+import { t } from '../lib/translations'
+import { THEMES, getTheme } from '../lib/themes'
+import { CURRICULUM } from '../data/curriculum'
 
-const CEFR_LEVELS = [
-  { id: 'a0',           label: 'A0',           name: "Boshlang'ich",        color: 'bg-gray-400',    xpRequired: 0    },
-  { id: 'elementary',   label: 'A1',           name: 'Elementary',          color: 'bg-blue-400',    xpRequired: 200  },
-  { id: 'a2',           label: 'A2',           name: 'Pre-Intermediate',    color: 'bg-cyan-500',    xpRequired: 600  },
-  { id: 'intermediate', label: 'B1',           name: 'Intermediate',        color: 'bg-green-500',   xpRequired: 1200 },
-  { id: 'b2',           label: 'B2',           name: 'Upper-Intermediate',  color: 'bg-yellow-500',  xpRequired: 2500 },
-  { id: 'advanced',     label: 'C1',           name: 'Advanced',            color: 'bg-orange-500',  xpRequired: 5000 },
-  { id: 'mastery',      label: 'C2',           name: 'Mastery',             color: 'bg-berry-deep',  xpRequired: 10000 },
-]
-
-const MILESTONES = {
-  english: [
-    { level: 'a0',           text: "Alifbo va asosiy so'zlar" },
-    { level: 'elementary',   text: 'Present Simple + kundalik gaplar' },
-    { level: 'a2',           text: "Past & Future + 500 so'z" },
-    { level: 'intermediate', text: "Barcha zamonlar + 1000 so'z" },
-    { level: 'b2',           text: "Murakkab grammatika + 2000 so'z" },
-    { level: 'advanced',     text: "Ona tilidek gaplashish" },
-    { level: 'mastery',      text: '🏆 To\'liq egallash' },
-  ],
-  russian: [
-    { level: 'a0',           text: 'Kirillcha alifbo + asosiy' },
-    { level: 'elementary',   text: "Salomlashish va o'zingni tanishtirish" },
-    { level: 'a2',           text: "Hozirgi zamon + 400 so'z" },
-    { level: 'intermediate', text: "Kelishiklar + 800 so'z" },
-    { level: 'b2',           text: "Fe'l turlari + 1500 so'z" },
-    { level: 'advanced',     text: "Ona tilidek gaplashish" },
-    { level: 'mastery',      text: '🏆 To\'liq egallash' },
-  ],
-  math: [
-    { level: 'a0',           text: "Sonlar va asosiy amallar" },
-    { level: 'elementary',   text: 'Ko\'paytirish jadvali + kasrlar' },
-    { level: 'a2',           text: 'Foizlar + nisbatlar' },
-    { level: 'intermediate', text: 'Algebra asoslari' },
-    { level: 'b2',           text: 'Geometriya + statistika' },
-    { level: 'advanced',     text: 'Oliy matematika kirish' },
-    { level: 'mastery',      text: '🏆 To\'liq egallash' },
-  ],
+const LEVEL_COLORS = {
+  A0: '#6B7280', A1: '#3B82F6', A2: '#8B5CF6', B1: '#F59E0B', B2: '#EF4444',
 }
 
-const SUBJECT_META = {
-  english: { label: 'Ingliz tili', flag: '🇬🇧' },
-  russian: { label: 'Rus tili',    flag: '🇷🇺' },
-  math:    { label: 'Matematika',  flag: '🔢' },
+function SpiderWebPath({ subject, progress, onSelectLesson }) {
+  const nodes = CURRICULUM[subject] || CURRICULUM.english
+  const completedIds = progress?.completed_lessons || []
+  const currentId = progress?.current_lesson || 1
+  const theme = getTheme(subject)
+
+  return (
+    <div className="relative w-full overflow-auto">
+      <svg viewBox="-100 -320 1200 920" className="w-full" style={{ minHeight: '600px' }}>
+        <defs>
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="3" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+
+        {/* Connection lines (behind nodes) */}
+        {nodes.map((node) =>
+          node.connects.map((targetId) => {
+            const target = nodes.find((n) => n.id === targetId)
+            if (!target || targetId <= node.id) return null
+            const isActive = completedIds.includes(node.id) && completedIds.includes(targetId)
+            return (
+              <line
+                key={`${node.id}-${targetId}`}
+                x1={node.x} y1={node.y}
+                x2={target.x} y2={target.y}
+                stroke={isActive ? theme.secondary : '#E5E7EB'}
+                strokeWidth={isActive ? 2 : 1}
+                strokeOpacity={isActive ? 0.8 : 0.3}
+                strokeDasharray={isActive ? 'none' : '4 4'}
+              />
+            )
+          })
+        )}
+
+        {/* Nodes */}
+        {nodes.map((node) => {
+          const isCompleted = completedIds.includes(node.id)
+          const isCurrent = node.id === currentId
+          const isLocked = !isCompleted && !isCurrent && node.id > currentId
+
+          return (
+            <g
+              key={node.id}
+              transform={`translate(${node.x}, ${node.y})`}
+              onClick={() => !isLocked && onSelectLesson(node)}
+              style={{ cursor: isLocked ? 'not-allowed' : 'pointer' }}
+            >
+              {isCurrent && (
+                <circle r={32} fill="none" stroke={theme.primary} strokeWidth={2} opacity={0.5}>
+                  <animate attributeName="r" values="28;38;28" dur="2s" repeatCount="indefinite" />
+                  <animate attributeName="opacity" values="0.5;0;0.5" dur="2s" repeatCount="indefinite" />
+                </circle>
+              )}
+
+              <circle
+                r={isCompleted ? 26 : isCurrent ? 28 : 22}
+                fill={isCompleted ? theme.primary : isCurrent ? theme.secondary : isLocked ? '#F3F4F6' : theme.light}
+                stroke={isCompleted ? theme.dark : isCurrent ? theme.primary : '#D1D5DB'}
+                strokeWidth={isCurrent ? 3 : 2}
+                filter={isCompleted ? 'url(#glow)' : 'none'}
+              />
+
+              <text
+                textAnchor="middle" dominantBaseline="middle"
+                fontSize={isLocked ? 14 : 16}
+                fill={isCompleted || isCurrent ? 'white' : isLocked ? '#9CA3AF' : theme.primary}
+              >
+                {isCompleted ? '✓' : isCurrent ? '▶' : isLocked ? '🔒' : node.id}
+              </text>
+
+              {/* Level badge */}
+              <rect x={-15} y={-38} width={30} height={14} rx={7} fill={LEVEL_COLORS[node.level] || '#6B7280'} />
+              <text y={-31} textAnchor="middle" fontSize={8} fill="white" fontWeight="bold">{node.level}</text>
+
+              {/* Topic label */}
+              <text
+                y={42} textAnchor="middle" fontSize={11}
+                fill={isLocked ? '#9CA3AF' : theme.dark}
+                fontWeight={isCurrent ? 'bold' : 'normal'}
+              >
+                {node.uz}
+              </text>
+
+              {isCompleted && (
+                <text y={54} textAnchor="middle" fontSize={8} fill={theme.secondary}>🔄 Takrorlash</text>
+              )}
+            </g>
+          )
+        })}
+      </svg>
+    </div>
+  )
 }
 
 export default function Roadmap() {
+  const { lang } = useLang()
+  const { theme, setSubject, subject } = useTheme()
   const navigate = useNavigate()
   const [profile, setProfile] = useState(null)
+  const [progress, setProgress] = useState({})
+  const [selectedNode, setSelectedNode] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [activeSubject, setActiveSubject] = useState('english')
 
   useEffect(() => {
-    async function load() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { navigate('/login'); return }
-      const { data } = await supabase.from('profiles')
-        .select('subjects, current_level, xp, total_berries_earned, total_lessons_completed')
-        .eq('id', session.user.id).single()
-      setProfile(data)
-      if (data?.subjects?.[0]) setActiveSubject(data.subjects[0])
+    async function loadData() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { navigate('/login'); return }
+
+      const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+      setProfile(prof)
+      if (prof?.subjects?.[0]) setSubject(prof.subjects[0])
+
+      // student_progress is the source of truth once SQL migration is run; fall back to profile maps.
+      const { data: prog } = await supabase
+        .from('student_progress').select('*').eq('user_id', user.id)
+
+      const progressMap = {}
+      ;(prog || []).forEach((p) => { progressMap[p.subject] = p })
+      setProgress(progressMap)
       setLoading(false)
     }
-    load()
-  }, [navigate])
+    loadData()
+  }, [navigate, setSubject])
 
-  if (loading) return (
-    <div className="min-h-screen bg-cream flex items-center justify-center">
-      <div className="w-8 h-8 border-4 border-berry-deep border-t-transparent rounded-full animate-spin" />
-    </div>
-  )
-
-  const totalXp = profile?.total_berries_earned || profile?.xp || 0
+  // Merge student_progress with profile fallbacks so this works pre-migration too.
+  const sp = progress[subject] || {}
+  const completedIds = sp.completed_lessons || profile?.completed_lessons?.[subject] || []
+  const currentId = sp.current_lesson || profile?.current_lesson?.[subject] || 1
+  const currentLevel = sp.current_level || 'A0'
   const subjects = profile?.subjects || ['english']
-  const currentLevelId = profile?.current_level?.[activeSubject] || 'a0'
-  const currentLevelIdx = CEFR_LEVELS.findIndex(l => l.id === currentLevelId)
-  const nextLevel = CEFR_LEVELS[currentLevelIdx + 1]
-  const milestones = MILESTONES[activeSubject] || MILESTONES.english
 
-  const xpToNext = nextLevel ? Math.max(0, nextLevel.xpRequired - totalXp) : 0
-  const progressToNext = nextLevel
-    ? Math.min(100, ((totalXp - (CEFR_LEVELS[currentLevelIdx]?.xpRequired || 0)) /
-        (nextLevel.xpRequired - (CEFR_LEVELS[currentLevelIdx]?.xpRequired || 0))) * 100)
-    : 100
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: theme.bg }}>
+        <div className="w-8 h-8 border-4 border-t-transparent rounded-full animate-spin"
+          style={{ borderColor: theme.primary, borderTopColor: 'transparent' }} />
+      </div>
+    )
+  }
 
   return (
-    <div className="min-h-screen bg-cream relative overflow-hidden">
-      <SubtleOrbs />
-      <div className="relative z-[1] max-w-2xl mx-auto px-4 py-6">
-        <div className="flex items-center gap-3 mb-6">
-          <button onClick={() => navigate('/dashboard')} className="text-berry-mid font-bold text-sm hover:text-berry-deep">← Orqaga</button>
-          <h1 className="text-2xl font-black text-berry-deep">Yo'l xarita 🗺️</h1>
+    <div className="min-h-screen" style={{ background: theme.bg }}>
+      {/* Subject tabs + progress summary */}
+      <div className="sticky top-0 z-10 backdrop-blur-md border-b" style={{ borderColor: theme.light }}>
+        <div className="flex items-center gap-3 px-4 pt-4">
+          <button onClick={() => navigate('/dashboard')} className="text-sm font-bold" style={{ color: theme.secondary }}>
+            ← {t('home', lang)}
+          </button>
+          <h1 className="text-lg font-black" style={{ color: theme.dark }}>🕸️ {t('roadmap', lang)}</h1>
         </div>
 
-        {/* Subject tabs */}
-        <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
-          {subjects.map(subj => {
-            const m = SUBJECT_META[subj]
-            return (
-              <button key={subj} onClick={() => setActiveSubject(subj)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-full font-bold text-sm shrink-0 transition-all ${
-                  activeSubject === subj ? 'bg-berry-deep text-white shadow-md' : 'bg-white text-gray-500 border border-gray-200'
-                }`}>
-                {m?.flag} {m?.label}
-              </button>
-            )
-          })}
+        <div className="flex gap-2 p-4 justify-center flex-wrap">
+          {subjects.map((sub) => (
+            <button
+              key={sub}
+              onClick={() => setSubject(sub)}
+              className={`px-4 py-2 rounded-full font-bold text-sm transition-all ${
+                subject === sub ? 'text-white shadow-lg scale-105' : 'bg-white text-gray-500'
+              }`}
+              style={subject === sub ? { background: getTheme(sub).primary } : {}}
+            >
+              {THEMES[sub]?.flag} {getTheme(sub).label[lang]}
+            </button>
+          ))}
         </div>
 
-        {/* Current level card */}
-        <div className="bg-berry-deep text-white rounded-3xl p-5 mb-6 shadow-lg">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <p className="text-xs font-bold text-white/60 uppercase tracking-wide">Hozirgi daraja</p>
-              <p className="text-3xl font-black">{CEFR_LEVELS[currentLevelIdx]?.label}</p>
-              <p className="text-sm font-semibold text-white/80">{CEFR_LEVELS[currentLevelIdx]?.name}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-xs font-bold text-white/60">Jami 🫐</p>
-              <p className="text-2xl font-black">{totalXp.toLocaleString()}</p>
-            </div>
-          </div>
-          {nextLevel && (
-            <>
-              <div className="w-full bg-white/20 rounded-full h-2.5 mb-1.5">
-                <div className="bg-white h-2.5 rounded-full transition-all duration-500"
-                  style={{ width: `${progressToNext}%` }} />
-              </div>
-              <p className="text-xs font-semibold text-white/70">
-                {nextLevel.label} darajasiga: {xpToNext.toLocaleString()} 🫐 qoldi
-              </p>
-            </>
-          )}
-        </div>
-
-        {/* CEFR Timeline */}
-        <div className="relative">
-          {/* Vertical line */}
-          <div className="absolute left-5 top-6 bottom-6 w-0.5 bg-gray-200 z-0" />
-
-          {CEFR_LEVELS.map((level, idx) => {
-            const isPast = idx < currentLevelIdx
-            const isCurrent = idx === currentLevelIdx
-            const isFuture = idx > currentLevelIdx
-            const milestone = milestones[idx]
-
-            return (
-              <div key={level.id} className="relative flex items-start gap-4 mb-6 z-[1]">
-                {/* Circle */}
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-black shrink-0 shadow-md transition-all ${
-                  isCurrent ? `${level.color} text-white scale-125 shadow-lg` :
-                  isPast ? 'bg-green-400 text-white' :
-                  'bg-white border-2 border-gray-200 text-gray-400'
-                }`}>
-                  {isPast ? '✓' : level.label}
-                </div>
-
-                {/* Content */}
-                <div className={`flex-1 bg-white rounded-2xl p-4 shadow-sm border transition-all ${
-                  isCurrent ? 'border-berry-mid shadow-md' : 'border-gray-100'
-                }`}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className={`font-black text-sm ${isCurrent ? 'text-berry-deep' : isPast ? 'text-green-600' : 'text-gray-400'}`}>
-                      {level.label} — {level.name}
-                    </span>
-                    {isCurrent && <span className="text-xs bg-berry-glow text-berry-deep font-bold px-2 py-0.5 rounded-full">Hozir shu yerda</span>}
-                    {isPast && <span className="text-xs bg-green-50 text-green-600 font-bold px-2 py-0.5 rounded-full">Bajarildi ✓</span>}
-                  </div>
-                  <p className={`text-sm ${isFuture ? 'text-gray-400' : 'text-gray-600'}`}>
-                    {milestone?.text}
-                  </p>
-                  {!isPast && (
-                    <p className="text-xs text-gray-300 font-semibold mt-1">
-                      {level.xpRequired.toLocaleString()} 🫐 kerak
-                    </p>
-                  )}
-                </div>
-              </div>
-            )
-          })}
+        <div className="flex justify-center gap-6 pb-3 text-sm flex-wrap">
+          <span style={{ color: theme.primary }}>✅ {completedIds.length} dars</span>
+          <span style={{ color: theme.secondary }}>📍 {currentId}-dars</span>
+          <span style={{ color: theme.primary }}>{currentLevel} daraja</span>
         </div>
       </div>
+
+      {/* Spider web */}
+      <div className="p-4 overflow-auto">
+        <SpiderWebPath
+          subject={subject}
+          progress={{ completed_lessons: completedIds, current_lesson: currentId }}
+          onSelectLesson={setSelectedNode}
+        />
+      </div>
+
+      {/* Selected node popup */}
+      {selectedNode && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center p-4" onClick={() => setSelectedNode(null)}>
+          <div className="w-full max-w-md rounded-3xl p-6 shadow-2xl bg-white" onClick={(e) => e.stopPropagation()}>
+            <span className="text-xs font-bold px-3 py-1 rounded-full text-white" style={{ background: theme.primary }}>
+              {selectedNode.level}
+            </span>
+            <h2 className="text-2xl font-black mt-3" style={{ color: theme.dark }}>{selectedNode.uz}</h2>
+            <p className="text-sm text-gray-400 mt-1">
+              {completedIds.includes(selectedNode.id)
+                ? '✅ Bajarilgan'
+                : selectedNode.id === currentId
+                  ? '▶ Hozirgi dars'
+                  : '🔒 Hali ochilmagan'}
+            </p>
+
+            <div className="flex gap-3 mt-4">
+              {selectedNode.id === currentId && (
+                <button
+                  onClick={() => navigate(`/lesson/${subject}/${selectedNode.id}`, {
+                    state: { isRevision: false, topic: selectedNode.topic, level: selectedNode.level },
+                  })}
+                  className="flex-1 py-3 rounded-full font-bold text-white"
+                  style={{ background: theme.primary }}
+                >
+                  ▶ Boshlash
+                </button>
+              )}
+              {completedIds.includes(selectedNode.id) && (
+                <button
+                  onClick={() => navigate(`/lesson/${subject}/${selectedNode.id}`, {
+                    state: { isRevision: true, topic: selectedNode.topic, level: selectedNode.level },
+                  })}
+                  className="flex-1 py-3 rounded-full font-bold"
+                  style={{ border: `2px solid ${theme.primary}`, color: theme.primary }}
+                >
+                  🔄 Takrorlash
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
