@@ -1035,7 +1035,7 @@ export default function Lesson() {
     }
   }
 
-  const TOTAL_BLOCKS = 10
+  const TOTAL_BLOCKS = 9
   const progressPct  = (block / TOTAL_BLOCKS) * 100
 
   const vocab     = lessonContent?.vocabulary || []
@@ -1105,7 +1105,7 @@ export default function Lesson() {
       <SubtleOrbs />
 
       {/* SessionTimer (only during active blocks) */}
-      {block >= 1 && block < 10 && profile && (
+      {block >= 1 && block < 9 && profile && (
         <SessionTimer
           goalMinutes={profile.daily_minutes || 30}
           xpEarned={sessionXP}
@@ -1116,7 +1116,7 @@ export default function Lesson() {
       )}
 
       {/* Progress header (blocks 1-7) */}
-      {block >= 1 && block < 10 && (
+      {block >= 1 && block < 9 && (
         <div className="fixed top-0 left-0 right-0 z-20 bg-white/95 backdrop-blur-sm shadow-sm">
           <div className="flex items-center justify-between px-4 py-3 max-w-2xl mx-auto">
             <button
@@ -1148,7 +1148,7 @@ export default function Lesson() {
       )}
 
       {/* Content */}
-      <div className={`flex-1 flex flex-col relative z-[1] ${block >= 1 && block < 10 ? 'pt-[4.5rem]' : ''}`}>
+      <div className={`flex-1 flex flex-col relative z-[1] ${block >= 1 && block < 9 ? 'pt-[4.5rem]' : ''}`}>
 
         {block === 1 && (
           vocab.length > 0
@@ -1247,6 +1247,7 @@ export default function Lesson() {
           />
         )}
 
+        {/* Block 8 — Speaking with Nigora (pronunciation + mistake feedback) */}
         {block === 8 && (
           <TutorSession
             level={profile?.current_level?.[subject] || 'elementary'}
@@ -1261,16 +1262,6 @@ export default function Lesson() {
         )}
 
         {block === 9 && (
-          <RealtimeConversation
-            topic={lessonPlan?.topic || 'Daily Routines'}
-            subject={subject}
-            level={profile?.current_level?.[subject] || 'elementary'}
-            studentName={profile?.full_name || 'Student'}
-            onComplete={xp => { addXP(xp); setBlock(10) }}
-          />
-        )}
-
-        {block === 10 && (
           <CompleteBlock
             sessionXP={sessionXP}
             score={practiceScore.correct}
