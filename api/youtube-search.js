@@ -33,7 +33,7 @@ function buildQuery(subject, topic, level, kind) {
 
 // Allowed video length per kind (seconds). Podcasts can run much longer.
 function durationWindow(kind) {
-  if (kind === 'podcast') return [180, 3600]   // 3–60 min
+  if (kind === 'podcast') return [600, 3600]   // 10–60 min: favor real podcast episodes, not short clips
   if (kind === 'cartoon') return [60, 1500]    // 1–25 min
   return [60, 1500]                            // lessons 1–25 min
 }
