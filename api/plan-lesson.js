@@ -118,9 +118,14 @@ export default async function handler(req, res) {
       ? Math.round(sessions.reduce((s, x) => s + (x.accuracy_percent || 0), 0) / sessions.length)
       : 0
 
-    const topMistakes = [...new Set(
-      sessions?.flatMap(s => s.weak_points?.map(wp => wp.correctAnswer).filter(Boolean) || []) || []
-    )].slice(0, 10)
+    // Weak points come from past sessions AND from the initial level-check (skipped/wrong
+    // questions stored on student_progress.weak_points), so early lessons target them.
+    const assessmentWeak = (progress?.weak_points || [])
+      .map(wp => wp.correctAnswer || wp.question).filter(Boolean)
+    const topMistakes = [...new Set([
+      ...(sessions?.flatMap(s => s.weak_points?.map(wp => wp.correctAnswer).filter(Boolean) || []) || []),
+      ...assessmentWeak,
+    ])].slice(0, 12)
 
     const previousNotes = sessions?.filter(s => s.ai_notes)?.map(s => s.ai_notes)?.join(' | ') || 'First session'
 

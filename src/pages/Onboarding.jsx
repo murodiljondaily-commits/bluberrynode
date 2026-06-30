@@ -161,6 +161,7 @@ export default function Onboarding() {
   const [selectedSubjects, setSelectedSubjects] = useState(addMode ? [addSubjectId] : [])
   const [quizIndex,        setQuizIndex]        = useState(0)
   const [levels,           setLevels]           = useState({})
+  const [weakBySubject,    setWeakBySubject]    = useState({})
   const [dailyMinutes,     setDailyMinutes]     = useState(30)
   const [saving,           setSaving]           = useState(false)
   const [error,            setError]            = useState('')
@@ -187,10 +188,11 @@ export default function Onboarding() {
     )
   }
 
-  function handleTestComplete(score, level) {
+  function handleTestComplete(score, level, weakPoints = []) {
     const subject = selectedSubjects[quizIndex]
     setLevels(prev => ({ ...prev, [subject]: level }))
-    if (addMode) { finishAddSubject(level); return }
+    setWeakBySubject(prev => ({ ...prev, [subject]: weakPoints || [] }))
+    if (addMode) { finishAddSubject(level, weakPoints || []); return }
     if (quizIndex < selectedSubjects.length - 1) {
       setQuizIndex(prev => prev + 1)
     } else {
@@ -239,7 +241,7 @@ export default function Onboarding() {
 
   // Add-subject mode: MERGE the one new subject into the existing profile (after a
   // level check or an explicit "start from A0"). Never overwrites other subjects.
-  async function finishAddSubject(assessedLevel) {
+  async function finishAddSubject(assessedLevel, weakPoints = []) {
     setSaving(true)
     setError('')
     try {
@@ -265,6 +267,7 @@ export default function Onboarding() {
       await supabase.from('student_progress').upsert({
         user_id: user.id, subject: addSubjectId,
         current_lesson: startLesson, current_level: cefr,
+        weak_points: weakPoints || [],
       }, { onConflict: 'user_id,subject' })
 
       navigate('/roadmap')
@@ -281,6 +284,7 @@ export default function Onboarding() {
       await supabase.from('student_progress').upsert({
         user_id: userId, subject: s,
         current_lesson: startingLessonForLevel(s, cefr), current_level: cefr,
+        weak_points: weakBySubject[s] || [],
       }, { onConflict: 'user_id,subject' }).then(() => {}, () => {})
     }
   }

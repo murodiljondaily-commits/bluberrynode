@@ -69,27 +69,44 @@ export default function AssessmentTest({ subject, questions, onComplete }) {
   const [selectedAnswer, setSelectedAnswer] = useState(null)
   const [finished,      setFinished]      = useState(false)
   const [finalScore,    setFinalScore]    = useState(0)
+  const weakRef = useRef([])   // questions answered wrong OR skipped → weak points
 
   const q           = questions[currentQ]
   const progressPct = (currentQ / totalQ) * 100
   const diffLabel   = DIFF_LABEL[Math.floor(currentQ / 5)]
 
+  function advance() {
+    if (currentQ < totalQ - 1) {
+      setCurrentQ(prev => prev + 1)
+      setSelectedAnswer(null)
+    } else {
+      setFinalScore(scoreRef.current)
+      setFinished(true)
+    }
+  }
+
+  function captureWeak(skipped) {
+    weakRef.current.push({
+      question: q.question,
+      correctAnswer: q.options[q.correct],
+      skipped: !!skipped,
+    })
+  }
+
   function handleAnswer(idx) {
     if (selectedAnswer !== null) return
     setSelectedAnswer(idx)
     if (idx === q.correct) { scoreRef.current++; playCorrect() }
-    else playWrong()
+    else { playWrong(); captureWeak(false) }
+    setTimeout(advance, 800)
+  }
 
-    setTimeout(() => {
-      if (currentQ < totalQ - 1) {
-        setCurrentQ(prev => prev + 1)
-        setSelectedAnswer(null)
-      } else {
-        const s = scoreRef.current
-        setFinalScore(s)
-        setFinished(true)
-      }
-    }, 800)
+  // Skip = counts as wrong (no score) and is captured as a weak point.
+  function skipQuestion() {
+    if (selectedAnswer !== null) return
+    playWrong()
+    captureWeak(true)
+    advance()
   }
 
   // Celebrate when the test finishes.
@@ -143,7 +160,7 @@ export default function AssessmentTest({ subject, questions, onComplete }) {
           </div>
 
           <button
-            onClick={() => onComplete(finalScore, level)}
+            onClick={() => onComplete(finalScore, level, weakRef.current)}
             className="w-full bg-berry-deep text-white font-black text-lg py-4 rounded-full shadow-lg hover:bg-berry-dark hover:scale-[1.02] transition-all duration-200"
           >
             Davom etish →
@@ -229,10 +246,19 @@ export default function AssessmentTest({ subject, questions, onComplete }) {
             })}
           </div>
 
-          {/* Skip the test and start from zero (A0) — available on every question */}
+          {/* Skip THIS question (counts as wrong + saved as a weak point) */}
           <button
-            onClick={() => onComplete(0, 'beginner')}
-            className="w-full mt-6 py-3 rounded-full font-bold text-sm border-2 border-berry-light text-berry-mid hover:bg-berry-glow transition-all"
+            onClick={skipQuestion}
+            disabled={selectedAnswer !== null}
+            className="w-full mt-5 py-3 rounded-full font-bold text-sm text-gray-400 hover:text-berry-mid transition-all disabled:opacity-30"
+          >
+            ⏭️ Bu savolni o&#x2018;tkazib yuborish (xato deb belgilanadi)
+          </button>
+
+          {/* Skip the whole test and start from zero (A0) */}
+          <button
+            onClick={() => onComplete(0, 'beginner', weakRef.current)}
+            className="w-full mt-2 py-3 rounded-full font-bold text-sm border-2 border-berry-light text-berry-mid hover:bg-berry-glow transition-all"
           >
             🌱 Testni o&#x2018;tkazib yuborib, noldan (A0) boshlash
           </button>
