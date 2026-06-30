@@ -124,7 +124,14 @@ export default function SpeakingLesson({ subject = 'english', sentences: propSen
 
         const data = await response.json()
         const transcript = data.transcript || ''
-        const pronunciation = data.pronunciation
+        // Always have a result object so the scorecard (with its retry button) renders,
+        // even if the server didn't return a full pronunciation breakdown.
+        const pronunciation = data.pronunciation || {
+          overall: 0, passed: false, accuracy: 0, fluency: 0, pronunciation: 0, wordScores: [],
+          feedback_uz: transcript
+            ? `Eshitildi: "${transcript}". Qayta urinib ko'ring.`
+            : "Ovoz aniqlanmadi. Mikrofonni tekshirib, qayta urinib ko'ring.",
+        }
 
         setHeard(transcript)
         setPronunciationResult(pronunciation)
@@ -171,6 +178,16 @@ export default function SpeakingLesson({ subject = 'english', sentences: propSen
   }
 
   const retry = () => {
+    setStatus('idle')
+    setHeard('')
+    setPronunciationResult(null)
+    setXpEarned(0)
+    setErrorMsg('')
+  }
+
+  const prev = () => {
+    if (index === 0) return
+    setIndex(i => i - 1)
     setStatus('idle')
     setHeard('')
     setPronunciationResult(null)
@@ -377,12 +394,22 @@ export default function SpeakingLesson({ subject = 'english', sentences: propSen
         </div>
       )}
 
-      {/* Global skip */}
-      {(status === 'idle' || status === 'recording') && (
-        <button onClick={() => onComplete && onComplete(xp)} className="text-sm text-gray-400 hover:text-berry-mid transition-colors">
-          O'tkazib yuborish →
+      {/* Persistent Prev / Next navigation — move between the 8 sentences freely */}
+      <div className="flex items-center justify-between gap-3 w-full max-w-md">
+        <button
+          onClick={prev}
+          disabled={index === 0}
+          className="px-4 py-2.5 rounded-full font-bold text-sm border-2 border-berry-light text-berry-mid hover:bg-berry-glow transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          ← Oldingi
         </button>
-      )}
+        <button
+          onClick={next}
+          className="flex-1 bg-berry-deep text-white font-black py-3 rounded-full shadow-lg hover:bg-berry-dark hover:scale-[1.02] transition-all"
+        >
+          {isLast ? 'Tugatish →' : 'Keyingisi →'}
+        </button>
+      </div>
     </div>
   )
 }

@@ -99,6 +99,27 @@ function parseJson(text) {
   )
 }
 
+// Remove duplicate answer options (the AI sometimes repeats one), and keep the
+// correct index pointing at the right text. Drops exercises that collapse to <2 options.
+function sanitizeExercises(exercises) {
+  return (exercises || [])
+    .map((ex) => {
+      const opts = Array.isArray(ex.options) ? ex.options.map((o) => String(o)) : []
+      if (!opts.length) return null
+      const correctText = opts[ex.correct]
+      const seen = new Set()
+      const uniq = []
+      for (const o of opts) {
+        const k = o.trim().toLowerCase()
+        if (!seen.has(k)) { seen.add(k); uniq.push(o) }
+      }
+      let correct = uniq.findIndex((o) => o === correctText)
+      if (correct < 0) correct = 0
+      return { ...ex, options: uniq, correct }
+    })
+    .filter((ex) => ex && ex.options.length >= 2)
+}
+
 // Generate lesson JSON via OpenAI (reliable primary for English, fallback for all).
 async function callOpenAI(system, prompt) {
   try {
@@ -270,9 +291,14 @@ Generate the VOCABULARY + GRAMMAR half. Return ONLY valid JSON, no markdown:
 
     const promptB = `${header}
 
+⚠️ ACCURACY IS CRITICAL — wrong translations confuse the student. Double-check every
+translation is correct. For each exercise the 4 options must be FOUR DIFFERENT choices
+(never repeat the same word twice), with EXACTLY ONE truly-correct option; the other 3
+must be plausible but clearly wrong. "correct" is the 0-based index of the right option.
+
 Generate the EXERCISES. Return ONLY valid JSON, no markdown:
 {
-  "exercises": [EXACTLY 10 items: type (fillBlank or translate), question, options (4), correct (0-3 — VARY the position across items), explanation_uz, word]
+  "exercises": [EXACTLY 10 items: type (fillBlank or translate), question, options (4 DISTINCT), correct (0-3 — VARY the position across items), explanation_uz, word]
 }`
 
     const promptC = `${header}
@@ -303,7 +329,7 @@ Generate the SPEAKING + STORY. Return ONLY valid JSON, no markdown:
     const lessonContent = {
       vocabulary: partA?.vocabulary?.length ? partA.vocabulary : fb.vocabulary,
       grammar_explanation: partA?.grammar_explanation || fb.grammar_explanation,
-      exercises: partB?.exercises?.length ? partB.exercises : fb.exercises,
+      exercises: sanitizeExercises(partB?.exercises?.length ? partB.exercises : fb.exercises),
       speaking_sentences: partC?.speaking_sentences?.length ? partC.speaking_sentences : fb.speaking_sentences,
       story: partC?.story || fb.story,
     }

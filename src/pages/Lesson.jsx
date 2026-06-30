@@ -153,9 +153,9 @@ function VocabBlock({ words, subject = 'english', onComplete }) {
             <p className="text-xs text-gray-400 font-semibold mt-3">Bosing →</p>
             <button
               onClick={e => { e.stopPropagation(); speak(w.audio_text || w.word, subject).catch(() => {}) }}
-              className="text-berry-mid text-xl hover:text-berry-deep transition-colors mt-1"
-              title="Tinglash"
-            >🔊</button>
+              className="mt-3 flex items-center gap-2 bg-berry-deep text-white font-bold text-base px-6 py-3 rounded-full shadow-md hover:bg-berry-dark hover:scale-105 transition-all"
+              title="Eshitish"
+            >🔊 Eshitish</button>
           </div>
           {/* Back */}
           <div
