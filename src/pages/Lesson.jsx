@@ -226,6 +226,37 @@ function GrammarBlock({ grammar, subject = 'english', onComplete }) {
             </div>
           )}
 
+          {/* When / why to use — the structured tutoring part */}
+          {grammar.when_to_use?.length > 0 && (
+            <div className="mb-4">
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Qachon ishlatiladi</p>
+              <div className="flex flex-col gap-2">
+                {grammar.when_to_use.map((u, i) => (
+                  <div key={i} className="bg-blue-50 border border-blue-100 rounded-2xl px-4 py-3">
+                    <p className="text-sm font-bold text-blue-800">✅ {u.case}</p>
+                    {u.example && <p className="font-black text-berry-deep text-sm mt-1">{u.example}</p>}
+                    {u.example_uz && <p className="text-xs text-gray-500">{u.example_uz}</p>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Differences from confusable concepts */}
+          {grammar.differences && (
+            <div className="bg-purple-50 border border-purple-200 rounded-2xl px-4 py-3 mb-4">
+              <p className="text-xs font-bold text-purple-400 uppercase tracking-wide mb-1">Farqi</p>
+              <p className="text-sm font-semibold text-purple-800">🔀 {grammar.differences}</p>
+            </div>
+          )}
+
+          {grammar.common_mistake && (
+            <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3 mb-4">
+              <p className="text-xs font-bold text-red-400 uppercase tracking-wide mb-1">Ko'p uchraydigan xato</p>
+              <p className="text-sm font-semibold text-red-700">⚠️ {grammar.common_mistake}</p>
+            </div>
+          )}
+
           {grammar.examples?.length > 0 && (
             <div className="mb-4">
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Misollar</p>

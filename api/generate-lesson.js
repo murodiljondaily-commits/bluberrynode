@@ -281,18 +281,23 @@ Instructions: ${plan?.contentInstructions || ''}`
     // latency vs one big call, and avoids truncation. No cache: fully per-user.
     const promptA = `${header}
 
-Generate the VOCABULARY + GRAMMAR half. Return ONLY valid JSON, no markdown:
+Generate the VOCABULARY + a DEEP, STRUCTURED GRAMMAR lesson (like a real 1-on-1 tutor:
+explain WHAT it is, WHEN and WHY to use it with several distinct use-cases, the exact
+form/structure, and how it DIFFERS from confusable concepts). Return ONLY valid JSON:
 {
   "vocabulary": [8 items: word, translation, pronunciation, example, example_uz, audio_text],
   "grammar_explanation": {
-    "title": "Grammar topic in Uzbek",
-    "explanation": "3-4 sentence explanation in Uzbek",
-    "rule": "One sentence rule in Uzbek",
-    "examples": [{"target":"sentence","uzbek":"translation","note":"note in Uzbek"}],
-    "common_mistake": "Most common mistake in Uzbek",
-    "tip": "Memory tip in Uzbek"
+    "title": "Grammar topic",
+    "explanation": "4-6 sentences explaining what it is and the core idea",
+    "when_to_use": [3-4 items, each: {"case":"a specific situation it's used for (e.g. habits, facts, schedules)","example":"target-language sentence","example_uz":"its translation"}],
+    "rule": "the exact form/structure rule (e.g. subject + verb(+s) ...)",
+    "examples": [4 items: {"target":"sentence","uzbek":"translation","note":"short note"}],
+    "differences": "1-3 sentences contrasting it with the most-confusable related concept (e.g. Present Simple vs Present Continuous), with a tiny example of each",
+    "common_mistake": "the most common mistake learners make",
+    "tip": "a memory tip"
   }
-}`
+}
+(All explanatory prose in the instruction language; target sentences stay in the target language.)`
 
     const promptB = `${header}
 

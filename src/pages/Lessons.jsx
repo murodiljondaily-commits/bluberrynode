@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import SubtleOrbs from '../components/SubtleOrbs'
+import { useLang } from '../context/LanguageContext'
+import { CURRICULUM, getCurriculumNode } from '../data/curriculum'
 
 const SUBJECT_META = {
   english: { label: 'Ingliz tili', flag: '🇬🇧', color: 'bg-blue-500', light: 'bg-blue-50 border-blue-200 text-blue-700' },
@@ -11,17 +13,20 @@ const SUBJECT_META = {
 
 const WEEKS_PER_LESSON = 5
 
-function getLessonTitle(subject, num) {
-  const TITLES = {
-    english: ['Present Simple','Past Simple','Future Tense','Modal Verbs','Articles','Adjectives','Adverbs','Prepositions','Questions','Negatives','Present Continuous','Past Continuous','Present Perfect','Passive Voice','Conditionals','Comparatives','Conjunctions','Indirect Speech','Phrasal Verbs','Mixed Review'],
-    russian: ["Приветствия","Настоящее время","Прошедшее время","Будущее время","Именительный падеж","Родительный падеж","Дательный падеж","Винительный падеж","Глаголы движения","Прилагательные","Вопросы","Числа","Виды глаголов","Предлоги","Императив","Сравнительная степень","Союзы","Косвенная речь","Фразеологизмы","Повторение"],
-    math: ["Qo'shish","Ayirish","Ko'paytirish","Bo'lish","Kasrlar","Aralash sonlar","Foizlar","Nisbatlar","Geometrik shakllar","Perimetr","Yuza","Hajm","Tenglamalar","Tengsizliklar","Koordinatalar","Grafik","Statistika","Ehtimollik","Funksiyalar","Umumiy takrorlash"],
-  }
-  return (TITLES[subject] || TITLES.english)[num - 1] || `Dars ${num}`
+// Single source of truth: the same curriculum the roadmap + lesson content use,
+// so the list never disagrees with what's actually taught.
+function getLessonTitle(subject, num, lang) {
+  const node = getCurriculumNode(subject, num)
+  if (!node) return `Dars ${num}`
+  return (lang === 'ru' ? node.ru : node.uz) || node.topic
+}
+function getLevelBadge(subject, num) {
+  return getCurriculumNode(subject, num)?.level || ''
 }
 
 export default function Lessons() {
   const navigate = useNavigate()
+  const { lang } = useLang()
   const { subject: subjectParam } = useParams()
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -54,7 +59,7 @@ export default function Lessons() {
   const currentLesson = profile?.current_lesson?.[activeSubject] || 1
   const meta = SUBJECT_META[activeSubject] || SUBJECT_META.english
 
-  const totalLessons = 20
+  const totalLessons = (CURRICULUM[activeSubject] || CURRICULUM.english).length
   const weeks = Array.from({ length: Math.ceil(totalLessons / WEEKS_PER_LESSON) }, (_, w) => ({
     week: w + 1,
     lessons: Array.from({ length: WEEKS_PER_LESSON }, (_, i) => w * WEEKS_PER_LESSON + i + 1).filter(n => n <= totalLessons),
@@ -129,7 +134,10 @@ export default function Lessons() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className={`font-black text-sm ${isCurrent ? 'text-white' : ''}`}>
-                        {num}-dars: {getLessonTitle(activeSubject, num)}
+                        {num}-dars: {getLessonTitle(activeSubject, num, lang)}
+                        <span className={`ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded ${isCurrent ? 'bg-white/20 text-white' : 'bg-berry-glow text-berry-mid'}`}>
+                          {getLevelBadge(activeSubject, num)}
+                        </span>
                       </div>
                       <div className={`text-xs mt-0.5 ${isCurrent ? 'text-white/70' : 'text-gray-400'}`}>
                         {isDone ? 'Bajarildi ✓' : isCurrent ? 'Hozirgi dars' : isLocked ? 'Qulflangan' : 'Boshlash mumkin'}
