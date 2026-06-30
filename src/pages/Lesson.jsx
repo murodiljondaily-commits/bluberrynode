@@ -128,6 +128,13 @@ function VocabBlock({ words, subject = 'english', onComplete }) {
     }
   }
 
+  function handlePrev() {
+    if (idx === 0) return
+    setIdx(i => i - 1)
+    setFlipped(false)
+    setSeenBack(true) // already seen earlier — allow moving forward again
+  }
+
   return (
     <div className="flex-1 flex flex-col items-center justify-center gap-6 px-4 py-8">
       <div className="text-center">
@@ -135,20 +142,20 @@ function VocabBlock({ words, subject = 'english', onComplete }) {
         <h2 className="text-xl font-black text-berry-deep">Kartani bosib tering! 👆</h2>
       </div>
 
-      {/* Flip card */}
-      <div className="w-80 h-52 cursor-pointer select-none" style={{ perspective: '1000px' }} onClick={handleFlip} key={idx}>
+      {/* Flip card — taller + word scales/wraps so long phrases never overflow */}
+      <div className="w-80 max-w-[90vw] h-64 cursor-pointer select-none" style={{ perspective: '1000px' }} onClick={handleFlip} key={idx}>
         <div
           className="w-full h-full relative transition-transform duration-500"
           style={{ transformStyle: 'preserve-3d', transform: flipped ? 'rotateY(180deg)' : 'rotateY(0deg)' }}
         >
           {/* Front */}
           <div
-            className="absolute inset-0 bg-white rounded-3xl shadow-2xl flex flex-col items-center justify-center px-8"
+            className="absolute inset-0 bg-white rounded-3xl shadow-2xl flex flex-col items-center justify-center px-5 overflow-hidden"
             style={{ backfaceVisibility: 'hidden' }}
           >
-            <p className="text-5xl font-black text-berry-deep mb-2">{w.word}</p>
+            <p className={`font-black text-berry-deep mb-2 text-center break-words leading-tight ${(w.word || '').length > 14 ? 'text-3xl' : 'text-4xl'}`}>{w.word}</p>
             {w.pronunciation && (
-              <p className="text-sm text-berry-mid font-mono bg-berry-glow rounded-full px-3 py-1">{w.pronunciation}</p>
+              <p className="text-sm text-berry-mid font-mono bg-berry-glow rounded-full px-3 py-1 max-w-full truncate">{w.pronunciation}</p>
             )}
             <p className="text-xs text-gray-400 font-semibold mt-3">Bosing →</p>
             <button
@@ -159,15 +166,15 @@ function VocabBlock({ words, subject = 'english', onComplete }) {
           </div>
           {/* Back */}
           <div
-            className="absolute inset-0 bg-berry-glow rounded-3xl shadow-2xl flex flex-col items-center justify-center px-8 text-center"
+            className="absolute inset-0 bg-berry-glow rounded-3xl shadow-2xl flex flex-col items-center justify-center px-5 text-center overflow-hidden"
             style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}
           >
-            <p className="text-3xl font-black text-berry-deep mb-2">{w.translation}</p>
+            <p className="text-2xl font-black text-berry-deep mb-2 break-words leading-tight">{w.translation}</p>
             {w.example && (
-              <p className="text-sm text-berry-mid font-semibold italic mb-1">"{w.example}"</p>
+              <p className="text-sm text-berry-mid font-semibold italic mb-1 break-words">"{w.example}"</p>
             )}
             {w.example_uz && (
-              <p className="text-xs text-gray-500">{w.example_uz}</p>
+              <p className="text-xs text-gray-500 break-words">{w.example_uz}</p>
             )}
           </div>
         </div>
@@ -182,15 +189,21 @@ function VocabBlock({ words, subject = 'english', onComplete }) {
         ))}
       </div>
 
-      {seenBack && (
+      <div className="flex items-center justify-between gap-3 w-full max-w-xs">
+        <button
+          onClick={handlePrev}
+          disabled={idx === 0}
+          className="px-4 py-2.5 rounded-full font-bold text-sm border-2 border-berry-light text-berry-mid hover:bg-berry-glow transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          ← Oldingi
+        </button>
         <button
           onClick={handleNext}
-          className="bg-berry-deep text-white font-black px-10 py-3 rounded-full shadow-lg hover:bg-berry-dark hover:scale-[1.02] transition-all"
-          style={{ animation: 'fadeInUp 0.3s ease-out' }}
+          className="flex-1 bg-berry-deep text-white font-black py-3 rounded-full shadow-lg hover:bg-berry-dark hover:scale-[1.02] transition-all"
         >
           {isLast ? 'Davom etish →' : 'Keyingisi →'}
         </button>
-      )}
+      </div>
 
       <p className="text-xs text-gray-400">{idx + 1}/{words.length} so'z</p>
     </div>
@@ -467,6 +480,13 @@ function StoryBlock({ story, subject = 'english', onComplete }) {
     }
   }
 
+  function prevQuestion() {
+    if (qIdx === 0) return
+    setQIdx(i => i - 1)
+    setAnswered(false)
+    setSelected(null)
+  }
+
   if (phase === 'read') {
     return (
       <div className="flex-1 overflow-y-auto px-4 py-6">
@@ -545,18 +565,25 @@ function StoryBlock({ story, subject = 'english', onComplete }) {
           })}
         </div>
         {answered && (
-          <div className="text-center" style={{ animation: 'fadeInUp 0.3s ease-out' }}>
-            <p className={`font-black mb-3 ${selected === q.correct ? 'text-green-600' : 'text-red-500'}`}>
-              {selected === q.correct ? "To'g'ri! ✅ +10 🫐" : 'Xato! ❌'}
-            </p>
-            <button
-              onClick={nextQuestion}
-              className="bg-berry-deep text-white font-black px-10 py-3 rounded-full shadow-lg hover:bg-berry-dark transition-all"
-            >
-              {qIdx < questions.length - 1 ? 'Keyingisi →' : 'Tugatish →'}
-            </button>
-          </div>
+          <p className={`text-center font-black mb-3 ${selected === q.correct ? 'text-green-600' : 'text-red-500'}`}>
+            {selected === q.correct ? "To'g'ri! ✅ +10 🫐" : 'Xato! ❌'}
+          </p>
         )}
+        <div className="flex items-center justify-between gap-3">
+          <button
+            onClick={prevQuestion}
+            disabled={qIdx === 0}
+            className="px-4 py-2.5 rounded-full font-bold text-sm border-2 border-berry-light text-berry-mid hover:bg-berry-glow transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            ← Oldingi
+          </button>
+          <button
+            onClick={nextQuestion}
+            className="flex-1 bg-berry-deep text-white font-black py-3 rounded-full shadow-lg hover:bg-berry-dark transition-all"
+          >
+            {qIdx < questions.length - 1 ? 'Keyingisi →' : 'Tugatish →'}
+          </button>
+        </div>
       </div>
     </div>
   )

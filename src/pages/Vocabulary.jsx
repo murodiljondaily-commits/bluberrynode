@@ -2,9 +2,12 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { vocabularyManager } from '../lib/vocabularyManager'
+import { speak } from '../lib/voiceSystem'
 import SubtleOrbs from '../components/SubtleOrbs'
 
 const SUBJECT_FLAGS = { english: '🇬🇧', russian: '🇷🇺', math: '🔢' }
+// Correct voice per subject: English→OpenAI, Russian→Yandex Alena, Math→Yandex Uzbek.
+const langFor = (s) => (s === 'russian' ? 'russian' : s === 'math' ? 'uzbek' : 'english')
 
 function SrsDots({ level }) {
   return (
@@ -216,7 +219,11 @@ export default function Vocabulary() {
                         <span>{SUBJECT_FLAGS[currentCard.subject] || '📖'}</span>
                         <span className="text-xs font-bold text-berry-mid uppercase tracking-wide">{currentCard.subject}</span>
                       </div>
-                      <p className="text-4xl font-black text-berry-deep mb-2">{currentCard.word}</p>
+                      <p className="text-4xl font-black text-berry-deep mb-2 break-words">{currentCard.word}</p>
+                      <button
+                        onClick={e => { e.stopPropagation(); speak(currentCard.word, langFor(currentCard.subject)).catch(() => {}) }}
+                        className="mb-2 flex items-center gap-2 bg-berry-deep text-white font-bold text-sm px-4 py-2 rounded-full shadow-md hover:bg-berry-dark transition-all"
+                      >🔊 Eshitish</button>
                       <p className="text-xs text-gray-400 font-semibold">Ko'rish uchun bosing →</p>
                       <p className="text-xs text-gray-300 mt-1">{currentCard.times_seen}x ko'rildi</p>
                     </div>
@@ -304,9 +311,16 @@ export default function Vocabulary() {
                       <div className="text-sm text-gray-500 font-semibold">{w.translation}</div>
                     </div>
                   </div>
-                  <div className="flex flex-col items-end gap-1 shrink-0 ml-2">
-                    <SrsDots level={w.srs_level} />
-                    <span className="text-[10px] text-gray-400 font-semibold">{w.next_review}</span>
+                  <div className="flex items-center gap-2 shrink-0 ml-2">
+                    <button
+                      onClick={() => speak(w.word, langFor(w.subject)).catch(() => {})}
+                      className="w-9 h-9 rounded-full bg-berry-glow text-berry-deep flex items-center justify-center text-base hover:bg-berry-light transition-all shrink-0"
+                      title="Eshitish"
+                    >🔊</button>
+                    <div className="flex flex-col items-end gap-1">
+                      <SrsDots level={w.srs_level} />
+                      <span className="text-[10px] text-gray-400 font-semibold">{w.next_review}</span>
+                    </div>
                   </div>
                 </div>
               ))}

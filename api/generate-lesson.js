@@ -214,8 +214,11 @@ export default async function handler(req, res) {
     const level = plan?.level || 'A1'
     const difficulty = plan?.difficulty || 'medium'
     // The student reads explanations in their UI language (uz or ru), not always Uzbek.
+    // Pin the SCRIPT so we never mix Cyrillic + Latin in Uzbek explanations.
     const uiLang = uiLanguage || profile?.preferred_language || profile?.ui_language || 'uz'
-    const explainLang = uiLang === 'ru' ? 'Russian' : 'Uzbek'
+    const explainLang = uiLang === 'ru'
+      ? 'Russian (Cyrillic script)'
+      : 'Uzbek in LATIN script (lotin alifbosi: oʻ, gʻ, sh, ch — NEVER Cyrillic letters)'
     console.log('Generate lesson:', subject, topic, level, difficulty, '| explain:', explainLang)
 
     // Fully personalized per user: every lesson is generated fresh (no shared cache).
@@ -256,6 +259,8 @@ CRITICAL RULES:
 tip, and all *_uz fields MUST be written in ${explainLang}. (The target-language words and
 example sentences stay in the target language; everything that EXPLAINS is ${explainLang}.)
 For example, a vocabulary translation must be ${explainLang}, NOT any other language.
+DO NOT MIX SCRIPTS: explanations are 100% in ${explainLang}. The ONLY place another script
+appears is inside the target-language vocabulary word / example sentence itself.
 
 ⚠️ THIS LESSON IS STRICTLY ABOUT THE TOPIC: "${topic}".
 EVERY item you produce MUST be about "${topic}". Do NOT default to greetings, introductions,

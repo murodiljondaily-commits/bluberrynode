@@ -4,6 +4,17 @@ import { supabase } from '../lib/supabaseClient'
 import AssessmentTest from '../components/AssessmentTest'
 import BlueberryOrbs from '../components/BlueberryOrbs'
 import { englishQuestions, russianQuestions, mathQuestions } from '../data/assessmentQuestions'
+import { CURRICULUM } from '../data/curriculum'
+
+const CEFR_ORDER = ['A0', 'A1', 'A2', 'B1', 'B2', 'C1']
+// Pick the first curriculum lesson at (or above) the student's level, so an
+// "elementary" student starts at A1 content — not the A0 alphabet/colors basics.
+function startingLessonForLevel(subject, cefr) {
+  const nodes = CURRICULUM[subject] || []
+  const targetIdx = Math.max(0, CEFR_ORDER.indexOf(cefr))
+  const node = nodes.find((n) => CEFR_ORDER.indexOf(n.level) >= targetIdx)
+  return node?.id || 1
+}
 
 const SUBJECTS = [
   { id: 'english', label: 'Ingliz tili', flag: '🇬🇧' },
@@ -204,10 +215,16 @@ export default function Onboarding() {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       const roadmap = buildRoadmap(levels)
+      // Start each subject at the lesson matching the assessed level.
+      const currentLesson = { english: 1, russian: 1, math: 1 }
+      selectedSubjects.forEach((s) => {
+        currentLesson[s] = startingLessonForLevel(s, LEVEL_TO_CEFR[levels[s] || 'beginner'] || 'A0')
+      })
       const { error: err } = await supabase.from('profiles').update({
         subjects:      selectedSubjects,
         daily_minutes: dailyMinutes,
         current_level: levels,
+        current_lesson: currentLesson,
         roadmap,
         onboarded:     true,
       }).eq('id', user.id)
@@ -231,20 +248,23 @@ export default function Onboarding() {
         .select('subjects, current_level, roadmap').eq('id', user.id).single()
 
       const level = assessedLevel || 'beginner'
+      const cefr = LEVEL_TO_CEFR[level] || 'A0'
+      const startLesson = startingLessonForLevel(addSubjectId, cefr)
       const newSubjects = [...new Set([...(prof?.subjects || []), addSubjectId])]
       const newLevels = { ...(prof?.current_level || {}), [addSubjectId]: level }
+      const newLessons = { ...(prof?.current_lesson || {}), [addSubjectId]: startLesson }
       const newRoadmap = {
         ...(prof?.roadmap || {}),
         [addSubjectId]: (MILESTONES[addSubjectId][level] || []).map(m => ({ ...m, done: false })),
       }
       const { error: err } = await supabase.from('profiles').update({
-        subjects: newSubjects, current_level: newLevels, roadmap: newRoadmap,
+        subjects: newSubjects, current_level: newLevels, current_lesson: newLessons, roadmap: newRoadmap,
       }).eq('id', user.id)
       if (err) throw err
 
       await supabase.from('student_progress').upsert({
         user_id: user.id, subject: addSubjectId,
-        current_lesson: 1, current_level: LEVEL_TO_CEFR[level] || 'A0',
+        current_lesson: startLesson, current_level: cefr,
       }, { onConflict: 'user_id,subject' })
 
       navigate('/roadmap')
@@ -257,9 +277,10 @@ export default function Onboarding() {
   // Seed student_progress rows for a fresh multi-subject onboarding.
   async function seedProgress(userId, computedLevels) {
     for (const s of selectedSubjects) {
+      const cefr = LEVEL_TO_CEFR[computedLevels[s] || 'beginner'] || 'A0'
       await supabase.from('student_progress').upsert({
         user_id: userId, subject: s,
-        current_lesson: 1, current_level: LEVEL_TO_CEFR[computedLevels[s] || 'beginner'] || 'A0',
+        current_lesson: startingLessonForLevel(s, cefr), current_level: cefr,
       }, { onConflict: 'user_id,subject' }).then(() => {}, () => {})
     }
   }
