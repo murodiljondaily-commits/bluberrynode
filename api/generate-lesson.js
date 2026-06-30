@@ -253,7 +253,15 @@ CRITICAL RULES:
 
     const sys = systemInstructions[subject] || systemInstructions.english
 
+    const scriptRule = subject === 'russian'
+      ? `🔤 RUSSIAN SCRIPT RULE: EVERY Russian word — in vocabulary, in EXERCISE questions AND options, and in speaking sentences — MUST be written in Russian CYRILLIC. NEVER use Latin transliteration (write "любит", NOT "lyubit"). A fill-blank question must be a COMPLETE Russian sentence containing ___ (e.g. "Мы ___ музыку"), never mixed with Uzbek/English words. The 4 options must all be Cyrillic Russian.`
+      : subject === 'english'
+      ? `🔤 A fill-blank question must be a COMPLETE English sentence containing ___ , and all 4 options are English words — never mixed with the explanation language.`
+      : `🔤 Math content (questions, options) is written in the instruction language; numbers and math symbols are universal.`
+
     const header = `${sys}
+
+${scriptRule}
 
 🌐 LANGUAGE OF INSTRUCTION = ${explainLang}. EVERY translation, explanation, grammar note,
 tip, and all *_uz fields MUST be written in ${explainLang}. (The target-language words and

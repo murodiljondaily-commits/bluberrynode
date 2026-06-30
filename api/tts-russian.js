@@ -8,11 +8,15 @@ export default async function handler(req, res) {
     const YANDEX_KEY = process.env.YANDEX_TTS_API_KEY || process.env.VITE_YANDEX_API_KEY
     if (!YANDEX_KEY) return res.status(500).json({ error: 'Yandex key not configured' })
     const FOLDER_ID = process.env.YANDEX_FOLDER_ID || process.env.VITE_YANDEX_FOLDER_ID
+    // Standard Moscow-Russian Yandex voice. Override with YANDEX_RU_VOICE if a different
+    // one sounds better (options: alena, jane, filipp, ermil, omazh, oksana, zahar).
+    const voice = process.env.YANDEX_RU_VOICE || 'jane'
 
     const params = new URLSearchParams({
       text,
-      voice: 'alena',
+      voice,
       lang: 'ru-RU',
+      role: 'neutral',
       speed: String(speed),
       format: 'mp3',
       ...(FOLDER_ID ? { folderId: FOLDER_ID } : {}),
