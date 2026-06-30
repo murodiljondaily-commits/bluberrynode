@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { vocabularyManager } from '../lib/vocabularyManager'
 import { speak } from '../lib/voiceSystem'
+import { playCorrect, playWrong } from '../lib/soundEffects'
 import SubtleOrbs from '../components/SubtleOrbs'
 
 const SUBJECT_FLAGS = { english: '🇬🇧', russian: '🇷🇺', math: '🔢' }
@@ -73,6 +74,7 @@ export default function Vocabulary() {
   }, [navigate])
 
   async function handleReview(wordId, isCorrect) {
+    isCorrect ? playCorrect() : playWrong()
     await vocabularyManager.recordReview(wordId, isCorrect).catch(() => {})
     setFlipped(false)
     setTimeout(() => {

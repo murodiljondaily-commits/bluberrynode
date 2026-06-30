@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useLang } from '../context/LanguageContext'
-import { playWrong } from '../lib/soundEffects'
+import { playWrong, playCorrect } from '../lib/soundEffects'
 
 // Embeds are widely blocked by channels, so we REDIRECT to YouTube and run a
 // return-timer (video length + 5 min). If the student doesn't come back in time,
@@ -162,7 +162,14 @@ export default function VideoLesson({ videoId, topic, subject = 'english', level
             </div>
           ))}
           {!checked && allAnswered && questions.length > 0 && (
-            <button onClick={() => setChecked(true)} className="w-full bg-berry-mid text-white font-black py-3 rounded-full mt-2">
+            <button
+              onClick={() => {
+                const allCorrect = questions.every((q, qi) => answers[qi] === q.correct)
+                allCorrect ? playCorrect() : playWrong()
+                setChecked(true)
+              }}
+              className="w-full bg-berry-mid text-white font-black py-3 rounded-full mt-2"
+            >
               {t('check')}
             </button>
           )}

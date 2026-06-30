@@ -1,4 +1,5 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
+import { playCorrect, playWrong, playCelebration } from '../lib/soundEffects'
 
 const SUBJECT_META = {
   english: { label: 'Ingliz tili', flag: '🇬🇧' },
@@ -76,7 +77,8 @@ export default function AssessmentTest({ subject, questions, onComplete }) {
   function handleAnswer(idx) {
     if (selectedAnswer !== null) return
     setSelectedAnswer(idx)
-    if (idx === q.correct) scoreRef.current++
+    if (idx === q.correct) { scoreRef.current++; playCorrect() }
+    else playWrong()
 
     setTimeout(() => {
       if (currentQ < totalQ - 1) {
@@ -89,6 +91,9 @@ export default function AssessmentTest({ subject, questions, onComplete }) {
       }
     }, 800)
   }
+
+  // Celebrate when the test finishes.
+  useEffect(() => { if (finished) playCelebration() }, [finished])
 
   // ── Results screen ──────────────────────────────────────────────
   if (finished) {

@@ -44,7 +44,7 @@ function buildTTSList(content, plan, subject) {
   //  - the target-language vocab word (manual 🔊 button on the flip card)
   //  - speaking-block sentences (the pronunciation part)
   ;(content?.vocabulary || []).forEach((w) => {
-    items.push({ text: w.audio_text || w.word, language: targetLang })
+    items.push({ text: w.word || w.audio_text, language: targetLang })
   })
   ;(content?.speaking_sentences || []).forEach((s) => {
     const txt = typeof s === 'string' ? s : s.text
@@ -159,7 +159,7 @@ function VocabBlock({ words, subject = 'english', onComplete }) {
             )}
             <p className="text-xs text-gray-400 font-semibold mt-3">Bosing →</p>
             <button
-              onClick={e => { e.stopPropagation(); speak(w.audio_text || w.word, subject).catch(() => {}) }}
+              onClick={e => { e.stopPropagation(); speak(w.word || w.audio_text, subject).catch(() => {}) }}
               className="mt-3 flex items-center gap-2 bg-berry-deep text-white font-bold text-base px-6 py-3 rounded-full shadow-md hover:bg-berry-dark hover:scale-105 transition-all"
               title="Eshitish"
             >🔊 Eshitish</button>
