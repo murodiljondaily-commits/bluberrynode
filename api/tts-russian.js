@@ -16,7 +16,7 @@ export default async function handler(req, res) {
       text,
       voice,
       lang: 'ru-RU',
-      role: 'neutral',
+      emotion: 'neutral',
       speed: String(speed),
       format: 'mp3',
       ...(FOLDER_ID ? { folderId: FOLDER_ID } : {}),
