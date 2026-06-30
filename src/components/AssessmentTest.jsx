@@ -228,6 +228,14 @@ export default function AssessmentTest({ subject, questions, onComplete }) {
               )
             })}
           </div>
+
+          {/* Skip the test and start from zero (A0) — available on every question */}
+          <button
+            onClick={() => onComplete(0, 'beginner')}
+            className="w-full mt-6 py-3 rounded-full font-bold text-sm border-2 border-berry-light text-berry-mid hover:bg-berry-glow transition-all"
+          >
+            🌱 Testni o&#x2018;tkazib yuborib, noldan (A0) boshlash
+          </button>
         </div>
       </div>
     </div>
