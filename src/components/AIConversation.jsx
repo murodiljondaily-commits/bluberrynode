@@ -36,6 +36,7 @@ export default function AIConversation({ subject = 'english', level = 'A1', topi
   const [started, setStarted] = useState(false)
   const [turns, setTurns] = useState(0)
   const [errorMsg, setErrorMsg] = useState('')
+  const [inputUz, setInputUz] = useState(false) // student is speaking Uzbek → Yandex STT
 
   const historyRef = useRef([])     // OpenAI-format [{role,content}]
   const recorderRef = useRef(null)
@@ -129,7 +130,8 @@ export default function AIConversation({ subject = 'english', level = 'A1', topi
       try {
         const fd = new FormData()
         fd.append('audio', blob, 'rec.webm')
-        fd.append('language', subject === 'russian' ? 'ru' : 'en')
+        // If the student chose to ask in Uzbek, transcribe with Yandex uz-UZ.
+        fd.append('language', inputUz ? 'uz' : (subject === 'russian' ? 'ru' : 'en'))
         fd.append('expected', '')
         const r = await fetch('/api/transcribe', { method: 'POST', body: fd })
         const d = await r.json()
@@ -235,6 +237,22 @@ export default function AIConversation({ subject = 'english', level = 'A1', topi
 
       {errorMsg && <p className="text-center text-sm text-orange-600 font-semibold mb-2">{errorMsg}</p>}
       {statusText && <p className="text-center text-xs font-bold text-berry-mid mb-2">{statusText}</p>}
+
+      {/* Input language toggle — speak target language or ask in Uzbek (Yandex STT) */}
+      <div className="flex items-center justify-center gap-2 mb-2">
+        <button
+          onClick={() => setInputUz(false)}
+          className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${!inputUz ? 'bg-berry-deep text-white' : 'bg-gray-100 text-gray-500'}`}
+        >
+          {subject === 'russian' ? '🇷🇺 Rus tilida' : '🇬🇧 Ingliz tilida'}
+        </button>
+        <button
+          onClick={() => setInputUz(true)}
+          className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${inputUz ? 'bg-berry-deep text-white' : 'bg-gray-100 text-gray-500'}`}
+        >
+          🇺🇿 O&#x2018;zbekcha so&#x2018;rash
+        </button>
+      </div>
 
       {/* Mic + finish */}
       <div className="flex flex-col items-center gap-2">

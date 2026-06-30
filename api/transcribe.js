@@ -4,33 +4,68 @@ import multer from 'multer'
 const app = express()
 const upload = multer({ storage: multer.memoryStorage() })
 
+// Whisper can't really handle Uzbek and is forced to a single language, so for uz/ru we
+// use Yandex SpeechKit STT (native uz-UZ / ru-RU) first, then fall back to Whisper.
+async function yandexSTT(buffer, lang) {
+  const KEY = process.env.YANDEX_TTS_API_KEY || process.env.VITE_YANDEX_API_KEY
+  if (!KEY) return null
+  try {
+    const FOLDER = process.env.YANDEX_FOLDER_ID || process.env.VITE_YANDEX_FOLDER_ID
+    const url = `https://stt.api.cloud.yandex.net/speech/v1/stt:recognize?topic=general&lang=${lang}${FOLDER ? `&folderId=${FOLDER}` : ''}`
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Api-Key ${KEY}` },
+      body: buffer,
+      signal: AbortSignal.timeout(15000),
+    })
+    if (!r.ok) { console.warn('Yandex STT', r.status, (await r.text()).slice(0, 140)); return null }
+    const d = await r.json()
+    return (d.result || '').trim() || null
+  } catch (e) {
+    console.warn('Yandex STT exception:', e.message)
+    return null
+  }
+}
+
+async function whisperSTT(buffer, language) {
+  const file = new File([buffer], 'audio.webm', { type: 'audio/webm' })
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('model', 'whisper-1')
+  formData.append('language', language)
+  const r = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+    body: formData,
+    signal: AbortSignal.timeout(30000),
+  })
+  const d = await r.json()
+  if (d.error) { console.error('Whisper error:', d.error); return '' }
+  return d.text || ''
+}
+
 app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
-  console.log('Transcribe hit. File:', req.file ? `${req.file.size} bytes` : 'none')
+  console.log('Transcribe hit. File:', req.file ? `${req.file.size} bytes` : 'none', '| lang:', req.body.language)
 
   try {
     if (!req.file) return res.status(400).json({ transcript: '', error: 'No audio file' })
 
-    const file = new File([req.file.buffer], 'audio.webm', { type: 'audio/webm' })
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('model', 'whisper-1')
-    formData.append('language', req.body.language || 'en')
+    const language = req.body.language || 'en'
+    let transcript = ''
 
-    const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
-      body: formData,
-      signal: AbortSignal.timeout(30000),
-    })
-
-    const whisperData = await whisperRes.json()
-    if (whisperData.error) {
-      console.error('Whisper error:', whisperData.error)
-      return res.status(500).json({ transcript: '', error: whisperData.error.message })
+    // Uzbek / Russian → Yandex STT first (Whisper can't do Uzbek); English → Whisper.
+    if (language === 'uz' || language === 'ru') {
+      transcript = (await yandexSTT(req.file.buffer, language === 'ru' ? 'ru-RU' : 'uz-UZ')) || ''
     }
-
-    const transcript = whisperData.text || ''
+    if (!transcript) {
+      transcript = (await whisperSTT(req.file.buffer, language)) || ''
+    }
     console.log('Transcript:', transcript)
+
+    // No pronunciation scoring needed for free conversation (no "expected" text).
+    if (!req.body.expected) {
+      return res.json({ transcript, pronunciation: null })
+    }
 
     const analysisRes = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
