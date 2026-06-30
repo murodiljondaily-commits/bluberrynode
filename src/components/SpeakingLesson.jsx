@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { playCorrect, playWrong } from '../lib/soundEffects'
 import { speak, speakUzbek } from '../lib/voiceSystem'
+import { blobToLpcm16k } from '../lib/audioPcm'
 
 // Target language (the sentence the student pronounces) — NEVER Uzbek through OpenAI.
 const langForSubject = (s) => (s === 'russian' ? 'russian' : s === 'math' ? 'uzbek' : 'english')
@@ -112,9 +113,20 @@ export default function SpeakingLesson({ subject = 'english', sentences: propSen
       const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
 
       try {
+        const sttLang = subject === 'russian' ? 'ru' : subject === 'math' ? 'uz' : 'en'
         const fd = new FormData()
-        fd.append('audio', blob, 'recording.webm')
-        fd.append('language', subject === 'russian' ? 'ru' : subject === 'math' ? 'uz' : 'en')
+        // Uzbek/Russian → LPCM for Yandex STT; English → webm/Whisper.
+        if (sttLang === 'uz' || sttLang === 'ru') {
+          try {
+            const pcm = await blobToLpcm16k(blob)
+            fd.append('audio', pcm, 'rec.pcm')
+            fd.append('format', 'lpcm')
+            fd.append('sampleRate', '16000')
+          } catch { fd.append('audio', blob, 'recording.webm') }
+        } else {
+          fd.append('audio', blob, 'recording.webm')
+        }
+        fd.append('language', sttLang)
         fd.append('expected', currentText)
 
         const response = await fetch('/api/transcribe', {

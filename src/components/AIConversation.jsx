@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useLang } from '../context/LanguageContext'
-import { speak, stopSpeaking } from '../lib/voiceSystem'
+import { speak, speakMixed, stopSpeaking } from '../lib/voiceSystem'
 import { playCelebration } from '../lib/soundEffects'
+import { blobToLpcm16k } from '../lib/audioPcm'
 
 const CONV_SECONDS = 10 * 60 // 10-minute conversation
 
@@ -91,7 +92,9 @@ export default function AIConversation({ subject = 'english', level = 'A1', topi
       // Speak the reply in the target language, then the correction in the explain language.
       setStatus('speaking')
       if (reply) await speak(reply, targetLanguage, 1.0)
-      if (correction && !endedRef.current) await speak(correction, explainLanguage, 1.0)
+      // Correction is in the explain language but quotes the target phrase — speak the
+      // quoted target words with the target voice so English isn't read in an Uzbek tone.
+      if (correction && !endedRef.current) await speakMixed(correction, explainLanguage, targetLanguage)
       if (!endedRef.current && mountedRef.current) setStatus('listening')
     } catch {
       if (!endedRef.current && mountedRef.current) setStatus('listening')
@@ -128,10 +131,20 @@ export default function AIConversation({ subject = 'english', level = 'A1', topi
       setStatus('transcribing')
       const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
       try {
+        const sttLang = inputUz ? 'uz' : (subject === 'russian' ? 'ru' : 'en')
         const fd = new FormData()
-        fd.append('audio', blob, 'rec.webm')
-        // If the student chose to ask in Uzbek, transcribe with Yandex uz-UZ.
-        fd.append('language', inputUz ? 'uz' : (subject === 'russian' ? 'ru' : 'en'))
+        // Uzbek/Russian → convert to LPCM so Yandex STT can read it; English → webm/Whisper.
+        if (sttLang === 'uz' || sttLang === 'ru') {
+          try {
+            const pcm = await blobToLpcm16k(blob)
+            fd.append('audio', pcm, 'rec.pcm')
+            fd.append('format', 'lpcm')
+            fd.append('sampleRate', '16000')
+          } catch { fd.append('audio', blob, 'rec.webm') }
+        } else {
+          fd.append('audio', blob, 'rec.webm')
+        }
+        fd.append('language', sttLang)
         fd.append('expected', '')
         const r = await fetch('/api/transcribe', { method: 'POST', body: fd })
         const d = await r.json()

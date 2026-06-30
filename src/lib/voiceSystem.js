@@ -129,6 +129,25 @@ export async function speak(text, language = 'auto', speed = 1.0) {
   return speakYandex(text, detectedLang, speed)
 }
 
+// Speak mixed-language text: quoted segments ("...") use quotedLang (the target
+// language), everything else uses baseLang (the explanation language). This stops the
+// Uzbek voice from mangling embedded English like "I have" → "ay haweye".
+export async function speakMixed(text, baseLang, quotedLang) {
+  if (!text?.trim()) return
+  const parts = []
+  const re = /["“”']([^"“”']+)["“”']/g
+  let last = 0, m
+  while ((m = re.exec(text))) {
+    if (m.index > last) parts.push({ t: text.slice(last, m.index), lang: baseLang })
+    parts.push({ t: m[1], lang: quotedLang })
+    last = re.lastIndex
+  }
+  if (last < text.length) parts.push({ t: text.slice(last), lang: baseLang })
+  for (const p of parts) {
+    if (p.t.trim()) await speak(p.t, p.lang, 1.0)
+  }
+}
+
 export const speakUzbek   = (text, speed) => speak(text, 'uzbek',   speed)
 export const speakRussian = (text, speed) => speak(text, 'russian', speed)
 export const speakEnglish = (text, speed) => speak(text, 'english', speed)
