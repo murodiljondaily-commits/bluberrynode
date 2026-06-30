@@ -1,242 +1,258 @@
-import { useState, useRef, useEffect } from 'react'
-import { sessionLogger } from '../lib/sessionLogger'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { useLang } from '../context/LanguageContext'
+import { speak, stopSpeaking } from '../lib/voiceSystem'
+import { playCelebration } from '../lib/soundEffects'
 
-const API = ''
+const CONV_SECONDS = 10 * 60 // 10-minute conversation
 
-const MAX_TURNS = 8
+const L = {
+  title:     { uz: '🎙️ AI bilan jonli suhbat', ru: '🎙️ Живой разговор с AI' },
+  intro:     { uz: "10 daqiqa AI murabbiy bilan gaplashing. U sizni gapirishga undaydi va xatolaringizni tushuntiradi.", ru: 'Поговорите с AI-репетитором 10 минут. Он будет вовлекать вас и объяснять ошибки.' },
+  start:     { uz: '▶️ Suhbatni boshlash', ru: '▶️ Начать разговор' },
+  speak:     { uz: '🎤 Bosib gapiring', ru: '🎤 Нажмите и говорите' },
+  stop:      { uz: '⏹️ To‘xtatish', ru: '⏹️ Остановить' },
+  thinking:  { uz: 'AI o‘ylayapti...', ru: 'AI думает...' },
+  speaking:  { uz: 'AI gapiryapti...', ru: 'AI говорит...' },
+  listening: { uz: 'Sizning navbatingiz — gapiring!', ru: 'Ваша очередь — говорите!' },
+  transcribing: { uz: 'Eshityapman...', ru: 'Слушаю...' },
+  correction:{ uz: 'Tuzatish', ru: 'Исправление' },
+  finish:    { uz: 'Suhbatni tugatish', ru: 'Завершить разговор' },
+  done:      { uz: '🎉 Ajoyib suhbat!', ru: '🎉 Отличный разговор!' },
+  continue:  { uz: 'Davom etish →', ru: 'Продолжить →' },
+  micDenied: { uz: 'Mikrofonga ruxsat bering!', ru: 'Разрешите доступ к микрофону!' },
+}
 
-export default function AIConversation({ topic, level, subject = 'english', onComplete }) {
-  const [messages, setMessages] = useState([])
-  const [isListening, setIsListening] = useState(false)
-  const [isProcessing, setIsProcessing] = useState(false)
-  const [turnCount, setTurnCount] = useState(0)
-  const [xpEarned, setXpEarned] = useState(0)
-  const [done, setDone] = useState(false)
-  const [intro, setIntro] = useState(false)
+const fmt = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 
+export default function AIConversation({ subject = 'english', level = 'A1', topic = '', studentName = 'Student', onComplete }) {
+  const { lang } = useLang()
+  const t = (k) => L[k][lang] || L[k].uz
+  const targetLanguage = subject === 'russian' ? 'russian' : 'english'
+  const explainLanguage = subject === 'russian' ? 'uzbek' : (lang === 'ru' ? 'russian' : 'uzbek')
+
+  const [status, setStatus] = useState('idle') // idle|thinking|speaking|listening|recording|transcribing|done
+  const [messages, setMessages] = useState([]) // {role:'ai'|'user'|'correction', text}
+  const [secondsLeft, setSecondsLeft] = useState(CONV_SECONDS)
+  const [started, setStarted] = useState(false)
+  const [turns, setTurns] = useState(0)
+  const [errorMsg, setErrorMsg] = useState('')
+
+  const historyRef = useRef([])     // OpenAI-format [{role,content}]
   const recorderRef = useRef(null)
   const chunksRef = useRef([])
+  const timerRef = useRef(null)
+  const endedRef = useRef(false)
+  const mountedRef = useRef(true)
   const bottomRef = useRef(null)
-  const isMounted = useRef(true)
 
-  useEffect(() => {
-    isMounted.current = true
-    startIntro()
-    return () => { isMounted.current = false }
-  }, [])
+  useEffect(() => () => { mountedRef.current = false; endedRef.current = true; stopSpeaking(); clearInterval(timerRef.current) }, [])
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, status])
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
-
-  async function startIntro() {
-    const introText = `Endi AI murabbiy bilan gaplashing! Tayyor bo'lsangiz, mikrofon tugmasini bosing. Mavzu: ${topic}`
-    addMsg('nigora', introText)
-    // Start the conversation with an AI greeting
-    await sendToGPT([], true)
-    setIntro(true)
+  function finish() {
+    if (endedRef.current) return
+    endedRef.current = true
+    clearInterval(timerRef.current)
+    stopSpeaking()
+    try { recorderRef.current?.stream?.getTracks().forEach((tr) => tr.stop()) } catch {}
+    playCelebration()
+    setStatus('done')
   }
 
-  function addMsg(role, text) {
-    setMessages(prev => [...prev, { role, text, timestamp: Date.now() }])
-  }
-
-  async function sendToGPT(history, isFirst = false) {
-    if (!isMounted.current) return
-    setIsProcessing(true)
-    const systemPrompt = `You are a warm, encouraging language tutor named Blueberry having a conversation with an Uzbek-speaking student.
-
-Topic: ${topic}
-Student level: ${level}
-Subject: ${subject}
-
-Rules:
-- Keep responses SHORT (1-2 sentences max)
-- If student makes a grammar mistake: correct GENTLY then continue the conversation
-- Ask follow-up questions to keep talking
-- Use simple vocabulary matching their level
-- Respond in: ${subject === 'english' ? 'English' : subject === 'russian' ? 'Russian' : 'Uzbek'}
-- After any correction, always add encouragement
-${isFirst ? `- Start the conversation by introducing the topic naturally and asking the student a simple question about "${topic}"` : ''}`
-
-    try {
-      const res = await fetch(`${API}/api/nigora-response`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          score: 100,
-          phrase: `[CONVERSATION] Topic: ${topic}. History: ${history.map(m => `${m.role}: ${m.text}`).join(' | ')}`,
-          heard: isFirst ? '[START]' : history[history.length - 1]?.text || '',
-          level,
-          conversationMode: true,
-          subject,
-          systemOverride: systemPrompt,
-        }),
+  // Countdown
+  useEffect(() => {
+    if (!started) return
+    timerRef.current = setInterval(() => {
+      setSecondsLeft((s) => {
+        if (s <= 1) { finish(); return 0 }
+        return s - 1
       })
-      const data = await res.json()
-      const aiText = data.response_uz || data.response || "Let's talk!"
-      if (isMounted.current) {
-        addMsg('ai', aiText)
-      }
+    }, 1000)
+    return () => clearInterval(timerRef.current)
+  }, [started]) // eslint-disable-line
+
+  const callAI = useCallback(async (userMessage) => {
+    if (endedRef.current) return
+    setStatus('thinking')
+    try {
+      const res = await fetch('/api/conversation', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subject, level, topic, uiLang: lang, studentName, history: historyRef.current, userMessage }),
+      })
+      const d = await res.json()
+      const reply = d.reply || ''
+      const correction = d.correction || ''
+      if (userMessage) historyRef.current.push({ role: 'user', content: userMessage })
+      historyRef.current.push({ role: 'assistant', content: reply })
+
+      if (!mountedRef.current) return
+      setMessages((m) => [...m, ...(correction ? [{ role: 'correction', text: correction }] : []), { role: 'ai', text: reply }])
+
+      // Speak the reply in the target language, then the correction in the explain language.
+      setStatus('speaking')
+      if (reply) await speak(reply, targetLanguage, 1.0)
+      if (correction && !endedRef.current) await speak(correction, explainLanguage, 1.0)
+      if (!endedRef.current && mountedRef.current) setStatus('listening')
     } catch {
-      const fallback = subject === 'english' ? `Great! Tell me more about ${topic}.` : `Расскажи мне о ${topic}.`
-      if (isMounted.current) addMsg('ai', fallback)
-    } finally {
-      if (isMounted.current) setIsProcessing(false)
+      if (!endedRef.current && mountedRef.current) setStatus('listening')
     }
+  }, [subject, level, topic, lang, studentName, targetLanguage, explainLanguage])
+
+  function start() {
+    setStarted(true)
+    setMessages([])
+    historyRef.current = []
+    callAI('') // greeting
   }
 
   async function startRecording() {
-    if (isListening || isProcessing) return
+    setErrorMsg('')
+    stopSpeaking()
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       chunksRef.current = []
       const mr = new MediaRecorder(stream)
-      mr.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data) }
-      mr.onstop = () => {
-        stream.getTracks().forEach(t => t.stop())
-        handleRecordingDone()
-      }
-      mr.start()
       recorderRef.current = mr
-      setIsListening(true)
+      mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data) }
+      mr.start()
+      setStatus('recording')
     } catch {
-      alert('Mikrofonga ruxsat bering!')
+      setErrorMsg(t('micDenied'))
     }
   }
 
   function stopRecording() {
-    recorderRef.current?.stop()
-    setIsListening(false)
-  }
-
-  async function handleRecordingDone() {
-    if (!isMounted.current) return
-    setIsProcessing(true)
-    const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
-    try {
-      const fd = new FormData()
-      fd.append('audio', blob, 'speech.webm')
-      fd.append('language', subject === 'russian' ? 'ru' : 'en')
-      const res = await fetch(`${API}/api/transcribe`, { method: 'POST', body: fd })
-      const data = await res.json()
-      const transcript = data.transcript || ''
-      if (!transcript.trim()) { setIsProcessing(false); return }
-
-      const newMsg = { role: 'user', text: transcript }
-      if (isMounted.current) addMsg('user', transcript)
-
-      const newTurn = turnCount + 1
-      setTurnCount(newTurn)
-      setXpEarned(e => e + 5)
-      sessionLogger.addXP?.(5)
-
-      const updatedHistory = [...messages, newMsg]
-      if (newTurn >= MAX_TURNS) {
-        setDone(true)
-        setIsProcessing(false)
-        return
+    const mr = recorderRef.current
+    if (!mr || mr.state === 'inactive') return
+    mr.onstop = async () => {
+      setStatus('transcribing')
+      const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
+      try {
+        const fd = new FormData()
+        fd.append('audio', blob, 'rec.webm')
+        fd.append('language', subject === 'russian' ? 'ru' : 'en')
+        fd.append('expected', '')
+        const r = await fetch('/api/transcribe', { method: 'POST', body: fd })
+        const d = await r.json()
+        const transcript = (d.transcript || '').trim()
+        mr.stream.getTracks().forEach((tr) => tr.stop())
+        if (!transcript) { if (mountedRef.current) setStatus('listening'); return }
+        setMessages((m) => [...m, { role: 'user', text: transcript }])
+        setTurns((n) => n + 1)
+        callAI(transcript)
+      } catch {
+        mr.stream.getTracks().forEach((tr) => tr.stop())
+        if (mountedRef.current) setStatus('listening')
       }
-      await sendToGPT(updatedHistory)
-    } catch {
-      if (isMounted.current) setIsProcessing(false)
     }
+    mr.stop()
   }
 
-  if (done) {
+  function micClick() {
+    if (status === 'listening') startRecording()
+    else if (status === 'recording') stopRecording()
+  }
+
+  const statusText = {
+    thinking: t('thinking'), speaking: t('speaking'), listening: t('listening'),
+    recording: t('stop'), transcribing: t('transcribing'),
+  }[status] || ''
+
+  // ── Intro ──────────────────────────────────────────────────────
+  if (!started) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-5 px-4 py-8">
-        <div className="text-5xl">🎉</div>
-        <h2 className="text-2xl font-black text-berry-deep text-center">Ajoyib suhbat!</h2>
-        <div className="bg-yellow-50 border-2 border-yellow-200 rounded-2xl px-10 py-4 text-center">
-          <div className="text-4xl font-black text-yellow-600">+{xpEarned}</div>
-          <div className="text-sm font-bold text-yellow-500">🫐 topildi</div>
-        </div>
-        <div className="bg-white rounded-2xl p-4 max-w-xs text-sm text-gray-600 shadow-sm w-full">
-          <p className="font-bold text-berry-deep mb-2">Suhbat xulosasi:</p>
-          <p>{turnCount} ta jumla aytdingiz 💪</p>
-        </div>
-        <button onClick={() => onComplete?.(xpEarned)}
-          className="bg-berry-deep text-white font-black px-10 py-4 rounded-full shadow-lg hover:bg-berry-dark hover:scale-[1.02] transition-all">
-          Davom etish →
+      <div className="flex-1 flex flex-col items-center justify-center px-6 text-center gap-5 max-w-md mx-auto">
+        <div className="text-5xl">🎙️</div>
+        <h2 className="text-2xl font-black text-berry-deep">{t('title')}</h2>
+        <p className="text-gray-500 font-semibold">{t('intro')}</p>
+        <button onClick={start}
+          className="bg-berry-deep text-white font-black text-lg px-10 py-4 rounded-full shadow-lg hover:bg-berry-dark hover:scale-[1.02] transition-all">
+          {t('start')}
+        </button>
+        <button onClick={() => onComplete?.(0)} className="text-sm text-gray-400 hover:text-berry-mid">
+          {lang === 'ru' ? 'Пропустить →' : "O'tkazib yuborish →"}
         </button>
       </div>
     )
   }
 
+  // ── Done ───────────────────────────────────────────────────────
+  if (status === 'done') {
+    const xp = Math.min(150, turns * 15)
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center px-6 text-center gap-5">
+        <div className="text-6xl">🎉</div>
+        <h2 className="text-2xl font-black text-berry-deep">{t('done')}</h2>
+        <p className="text-gray-500 font-semibold">{turns} {lang === 'ru' ? 'реплик' : 'marta gapirdingiz'} · +{xp} 🫐</p>
+        <button onClick={() => onComplete?.(xp)}
+          className="bg-berry-deep text-white font-black text-lg px-10 py-4 rounded-full shadow-lg hover:bg-berry-dark transition-all">
+          {t('continue')}
+        </button>
+      </div>
+    )
+  }
+
+  // ── Active conversation ────────────────────────────────────────
   return (
-    <div className="flex-1 flex flex-col relative">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-white/80 backdrop-blur-sm border-b border-gray-100">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-berry-deep flex items-center justify-center text-white text-sm font-black">🤖</div>
-          <div>
-            <p className="font-black text-berry-deep text-sm">AI Murabbiy</p>
-            <p className="text-xs text-gray-400">{topic}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-bold text-gray-400">{turnCount}/{MAX_TURNS}</span>
-          <button onClick={() => setDone(true)}
-            className="text-xs font-bold text-berry-mid border border-berry-light rounded-full px-3 py-1 hover:bg-berry-glow">
-            Tugatish
-          </button>
-        </div>
+    <div className="flex-1 flex flex-col px-4 py-3 max-w-2xl mx-auto w-full">
+      {/* Timer */}
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-xs font-bold text-gray-400 uppercase">{t('title')}</span>
+        <span className={`font-black tabular-nums ${secondsLeft < 60 ? 'text-red-500' : 'text-berry-deep'}`}>⏱️ {fmt(secondsLeft)}</span>
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3">
-        {messages.map((msg, i) => (
-          <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[78%] px-4 py-3 rounded-2xl text-sm font-semibold shadow-sm leading-relaxed ${
-              msg.role === 'user'
-                ? 'bg-berry-deep text-white rounded-br-sm'
-                : msg.role === 'nigora'
-                ? 'bg-purple-50 text-purple-700 border border-purple-100 rounded-bl-sm text-xs'
-                : 'bg-white text-gray-700 border border-gray-100 rounded-bl-sm'
-            }`}>
-              {msg.text}
-            </div>
-          </div>
-        ))}
-
-        {/* Thinking indicator */}
-        {isProcessing && (
-          <div className="flex justify-start">
-            <div className="bg-white border border-gray-100 rounded-2xl rounded-bl-sm px-4 py-3 shadow-sm">
-              <div className="flex gap-1 items-center">
-                {[0, 1, 2].map(i => (
-                  <div key={i} className="w-2 h-2 rounded-full bg-berry-mid animate-bounce"
-                    style={{ animationDelay: `${i * 0.15}s` }} />
-                ))}
+      {/* Transcript */}
+      <div className="flex-1 overflow-y-auto space-y-2.5 mb-3 min-h-[200px] max-h-[46vh] bg-gray-50 rounded-2xl p-3">
+        {messages.map((m, i) => {
+          if (m.role === 'correction') {
+            return (
+              <div key={i} className="bg-purple-50 border border-purple-200 rounded-2xl px-4 py-2.5">
+                <p className="text-[10px] font-black text-purple-400 uppercase tracking-wide">🔧 {t('correction')}</p>
+                <p className="text-sm font-semibold text-purple-800">{m.text}</p>
               </div>
+            )
+          }
+          const isUser = m.role === 'user'
+          return (
+            <div key={i} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+              <div className={`max-w-[82%] rounded-2xl px-4 py-2.5 text-sm font-semibold ${
+                isUser ? 'bg-berry-deep text-white rounded-br-none' : 'bg-white shadow text-gray-700 rounded-bl-none'}`}>
+                {!isUser && <span className="mr-1">🤖</span>}{m.text}
+              </div>
+            </div>
+          )
+        })}
+        {(status === 'thinking' || status === 'transcribing' || status === 'speaking') && (
+          <div className="flex justify-start">
+            <div className="bg-white rounded-2xl rounded-bl-none px-4 py-3 shadow">
+              <div className="flex gap-1">{[0, 1, 2].map((i) => (
+                <div key={i} className="w-2 h-2 rounded-full bg-berry-mid animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
+              ))}</div>
             </div>
           </div>
         )}
         <div ref={bottomRef} />
       </div>
 
-      {/* Mic button */}
-      <div className="px-4 py-5 bg-white/90 backdrop-blur-sm border-t border-gray-100 flex flex-col items-center gap-2">
+      {errorMsg && <p className="text-center text-sm text-orange-600 font-semibold mb-2">{errorMsg}</p>}
+      {statusText && <p className="text-center text-xs font-bold text-berry-mid mb-2">{statusText}</p>}
+
+      {/* Mic + finish */}
+      <div className="flex flex-col items-center gap-2">
         <button
-          onMouseDown={startRecording}
-          onMouseUp={stopRecording}
-          onTouchStart={startRecording}
-          onTouchEnd={stopRecording}
-          disabled={isProcessing}
-          className={`w-20 h-20 rounded-full flex items-center justify-center text-3xl shadow-xl transition-all duration-150 ${
-            isListening
-              ? 'bg-red-500 text-white scale-110 shadow-red-200'
-              : isProcessing
-              ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-              : 'bg-berry-deep text-white hover:bg-berry-dark hover:scale-105 active:scale-95'
-          }`}
+          onClick={micClick}
+          disabled={!['listening', 'recording'].includes(status)}
+          className={`w-20 h-20 rounded-full text-white text-3xl shadow-xl flex items-center justify-center transition-all ${
+            status === 'recording' ? 'bg-red-500 scale-110 animate-pulse' :
+            status === 'listening' ? 'bg-berry-deep hover:scale-105' : 'bg-gray-300 cursor-not-allowed'}`}
         >
-          {isListening ? '⏹' : isProcessing ? '⚙️' : '🎤'}
+          🎤
         </button>
-        <p className="text-xs font-semibold text-gray-400">
-          {isListening ? 'Gaplaning... (qo\'yib yuboring)' : isProcessing ? 'Qayta ishlanmoqda...' : 'Bosib turing va gaplaning'}
+        <p className="text-xs text-gray-400 font-semibold">
+          {status === 'recording' ? t('stop') : status === 'listening' ? t('speak') : ''}
         </p>
+        <button onClick={finish} className="text-xs text-gray-400 hover:text-berry-mid transition-colors mt-1">
+          {t('finish')}
+        </button>
       </div>
     </div>
   )

@@ -7,7 +7,7 @@ import SpeakingLesson from '../components/SpeakingLesson'
 import SessionTimer from '../components/SessionTimer'
 import SubtleOrbs from '../components/SubtleOrbs'
 import VideoLesson from '../components/VideoLesson'
-import RealtimeConversation from '../components/RealtimeConversation'
+import AIConversation from '../components/AIConversation'
 import { sessionLogger } from '../lib/sessionLogger'
 import { AdaptiveEngine } from '../lib/exerciseEngine'
 import { vocabularyManager } from '../lib/vocabularyManager'
@@ -1094,7 +1094,7 @@ export default function Lesson() {
     }
   }
 
-  const TOTAL_BLOCKS = 9
+  const TOTAL_BLOCKS = 10
   const progressPct  = (block / TOTAL_BLOCKS) * 100
 
   const vocab     = lessonContent?.vocabulary || []
@@ -1164,7 +1164,7 @@ export default function Lesson() {
       <SubtleOrbs />
 
       {/* SessionTimer (only during active blocks) */}
-      {block >= 1 && block < 9 && profile && (
+      {block >= 1 && block < 10 && profile && (
         <SessionTimer
           goalMinutes={profile.daily_minutes || 30}
           xpEarned={sessionXP}
@@ -1175,7 +1175,7 @@ export default function Lesson() {
       )}
 
       {/* Progress header (blocks 1-7) */}
-      {block >= 1 && block < 9 && (
+      {block >= 1 && block < 10 && (
         <div className="fixed top-0 left-0 right-0 z-20 bg-white/95 backdrop-blur-sm shadow-sm">
           <div className="flex items-center justify-between px-4 py-3 max-w-2xl mx-auto">
             <button
@@ -1207,7 +1207,7 @@ export default function Lesson() {
       )}
 
       {/* Content */}
-      <div className={`flex-1 flex flex-col relative z-[1] ${block >= 1 && block < 9 ? 'pt-[4.5rem]' : ''}`}>
+      <div className={`flex-1 flex flex-col relative z-[1] ${block >= 1 && block < 10 ? 'pt-[4.5rem]' : ''}`}>
 
         {block === 1 && (
           vocab.length > 0
@@ -1320,7 +1320,24 @@ export default function Lesson() {
           />
         )}
 
+        {/* Block 9 — 10-min AI speaking conversation (language subjects only) */}
         {block === 9 && (
+          subject === 'math'
+            ? <div className="flex-1 flex items-center justify-center">
+                <button onClick={() => setBlock(10)} className="bg-berry-deep text-white font-black px-8 py-4 rounded-full">
+                  Davom etish →
+                </button>
+              </div>
+            : <AIConversation
+                subject={subject}
+                level={profile?.current_level?.[subject] || 'elementary'}
+                topic={lessonPlan?.topic || 'greetings'}
+                studentName={profile?.full_name?.split(' ')[0] || 'Student'}
+                onComplete={xp => { addXP(xp); setBlock(10) }}
+              />
+        )}
+
+        {block === 10 && (
           <CompleteBlock
             sessionXP={sessionXP}
             score={practiceScore.correct}
